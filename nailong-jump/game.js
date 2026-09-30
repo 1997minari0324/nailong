@@ -60,7 +60,7 @@ let jump = null;
 let fallT = 0;
 let player = { x: 0, y: 0, lift: 0 };
 let camera = { x: 0, y: 0, scale: 1 };
-const LOOK_AHEAD = 4;
+const LOOK_AHEAD = 2;
 let floaters = [];
 let puffs = [];
 let didJump = false;
@@ -705,7 +705,7 @@ function render() {
     ctx.translate(-anchorX, -anchorY);
     drawRoute();
     order.forEach((item) => {
-      if (item.index >= current - 1 && item.index <= current + LOOK_AHEAD) drawPlatform(item.p);
+      if (item.index >= current && item.index <= current + LOOK_AHEAD) drawPlatform(item.p);
     });
     if (mode !== 'over') drawJumper();
     drawFloaters();

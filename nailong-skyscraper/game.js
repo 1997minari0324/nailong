@@ -265,7 +265,7 @@ function showMenu() {
   phase = 'swing';
   card.innerHTML = '<h1>奶龙摩天楼</h1>'
     + '<p class="lead">方块里装着奶龙。它会左右摆，点一下放下来，叠到下面那块的正上方。</p>'
-    + '<p class="note">有的是正方块，有的是长方块。稍微歪一点也没关系，只要还搭在楼上就不会倒。叠得很正时，入住的人会更多。</p>'
+    + '<p class="note">有的是正方块，有的是长方块。没对准就停在落下的位置，不会自动挪正。只有完全没搭上才会倒。</p>'
     + '<button class="primary" type="button" data-act="start">开始盖楼</button>'
     + '<p class="note">最高入住 ' + best.people + ' 人 · 最高 ' + best.floors + ' 层</p>'
     + '<a class="ghost" href="../">返回</a>';
@@ -397,33 +397,24 @@ function landPiece() {
   const left = Math.max(a1, b1);
   const right = Math.min(a2, b2);
   const overlap = right - left;
-  const minKeep = Math.max(16, top.width * 0.07);
+  const minKeep = Math.max(22, top.width * 0.12);
   if (overlap < minKeep) {
     failPiece();
     return;
   }
-  const offset = Math.abs((a1 + a2) / 2 - top.center);
-  const perfect = offset <= Math.max(10, top.width * 0.08);
-  const steady = offset <= Math.max(36, top.width * 0.28);
-  if (!steady) {
+  const dropCenter = (a1 + a2) / 2;
+  const offset = Math.abs(dropCenter - top.center);
+  const perfect = offset <= Math.max(8, top.width * 0.045);
+  if (!perfect) {
     if (a1 < b1 - 1) spawnDebris(a1, roofY - FLOOR_H, b1 - a1, -1, piece.seed);
     if (a2 > b2 + 1) spawnDebris(b2, roofY - FLOOR_H, a2 - b2, 1, piece.seed);
   }
-  let kept = steady ? top.cells : Math.round((overlap / top.width) * top.cells + 0.55);
-  kept = Math.max(1, Math.min(top.cells, kept));
-  let form = kept <= 1 ? 'cubes' : (piece.form || 'cubes');
-  let width = widthFor(kept, form);
-  if (!steady && width > overlap * 1.65 && kept > 1) {
-    kept -= 1;
-    form = kept <= 1 ? 'cubes' : form;
-    width = widthFor(kept, form);
-  }
-  let center = steady ? top.center : (left + right) / 2;
-  if (!steady) {
-    const half = width / 2;
-    if (center - half < left) center = left + half;
-    if (center + half > right) center = right - half;
-  }
+  const kept = perfect
+    ? top.cells
+    : Math.max(1, Math.min(top.cells, Math.round((overlap / top.width) * top.cells)));
+  const form = kept <= 1 ? 'cubes' : (piece.form || 'cubes');
+  const width = perfect ? piece.width : overlap;
+  const center = perfect ? dropCenter : (left + right) / 2;
   floors.push({
     center,
     width,

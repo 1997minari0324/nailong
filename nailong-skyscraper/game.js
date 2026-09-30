@@ -2,9 +2,9 @@
 
 const BEST_KEY = 'nailong-skyscraper-best';
 const MUTE_KEY = 'nailong-skyscraper-mute';
-const FLOOR_H = 78;
-const CELL = 78;
-const MODULE_GAP = 5;
+const FLOOR_H = 62;
+const CELL = 62;
+const MODULE_GAP = 4;
 
 const SKINS = [
   { id: 'happy', file: 'assets/happy.jpg' },
@@ -67,6 +67,8 @@ let actx = null;
 let time = 0;
 let swingClock = 0;
 let cam = 0;
+let lean = 0;
+let leanVel = 0;
 let shake = 0;
 let overDelay = 0;
 let overShown = false;
@@ -265,7 +267,7 @@ function showMenu() {
   phase = 'swing';
   card.innerHTML = '<h1>奶龙摩天楼</h1>'
     + '<p class="lead">方块里装着奶龙。它会左右摆，点一下放下来，叠到下面那块的正上方。</p>'
-    + '<p class="note">有的是正方块，有的是长方块。没对准也会整块留在落下的位置，多出去的部分不会被切掉。只有完全没搭上才会倒。</p>'
+    + '<p class="note">有的是正方块，有的是长方块。没对准会整块留在落下的位置。楼会跟着重心摇晃，摇出底座就会倒。</p>'
     + '<button class="primary" type="button" data-act="start">开始盖楼</button>'
     + '<p class="note">最高入住 ' + best.people + ' 人 · 最高 ' + best.floors + ' 层</p>'
     + '<a class="ghost" href="../">返回</a>';
@@ -295,6 +297,8 @@ function resetTower() {
   newPeople = false;
   newHeight = false;
   cam = 0;
+  lean = 0;
+  leanVel = 0;
   shake = 0;
   overDelay = 0;
   overShown = false;
@@ -387,33 +391,128 @@ function failPiece() {
   syncHud();
 }
 
+function rotateAround(x, y, pivot, angle) {
+  const dx = x - pivot.x;
+  const dy = y - pivot.y;
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return {
+    x: pivot.x + dx * c - dy * s,
+    y: pivot.y + dx * s + dy * c,
+  };
+}
+
+function towerPivot() {
+  const base = floors[0];
+  return { x: base.center, y: floorTop(0) + FLOOR_H };
+}
+
+function currentRoof() {
+  const i = floors.length - 1;
+  const floor = floors[i];
+  const topY = floorTop(i);
+  const pivot = towerPivot();
+  return {
+    left: rotateAround(floor.center - floor.width / 2, topY, pivot, lean),
+    right: rotateAround(floor.center + floor.width / 2, topY, pivot, lean),
+  };
+}
+
+function localXFromScreen(screenX, localY) {
+  const pivot = towerPivot();
+  const dy = localY - pivot.y;
+  const c = Math.cos(lean);
+  const s = Math.sin(lean);
+  if (Math.abs(c) < 0.25) return screenX;
+  return pivot.x + (screenX - pivot.x + dy * s) / c;
+}
+
+function updateSway(dt) {
+  if (floors.length < 2) {
+    leanVel += -lean * 8 * dt;
+    lean += leanVel * dt;
+    leanVel *= Math.exp(-2 * dt);
+    return;
+  }
+  const base = floors[0];
+  let mass = 0;
+  let mx = 0;
+  let mh = 0;
+  floors.forEach((floor, i) => {
+    const m = Math.max(24, floor.width);
+    mass += m;
+    mx += floor.center * m;
+    mh += (i + 0.5) * FLOOR_H * m;
+  });
+  const comX = mx / mass;
+  const comH = mh / mass;
+  const pivot = base.center;
+  const offset = comX - pivot;
+  const target = Math.max(-0.26, Math.min(0.26, offset / Math.max(64, comH * 0.5)));
+  if (mode === 'play') {
+    leanVel += (target - lean) * 20 * dt;
+    leanVel *= Math.exp(-2.8 * dt);
+  } else {
+    leanVel += Math.sign(lean || offset || 1) * 1.8 * dt;
+  }
+  lean += leanVel * dt;
+  const leanedCom = pivot + offset * Math.cos(lean) - comH * Math.sin(lean);
+  const outside = leanedCom - pivot;
+  const half = base.width * 0.5;
+  if (mode === 'play' && Math.abs(outside) > half) {
+    leanVel += Math.sign(outside) * 2.4 * dt;
+  }
+  if (mode === 'play' && (Math.abs(lean) > 0.46 || Math.abs(outside) > half * 1.2)) {
+    topple();
+  }
+}
+
+function topple() {
+  if (mode !== 'play') return;
+  mode = 'over';
+  overDelay = 0.75;
+  overShown = false;
+  shake = 14;
+  combo = 0;
+  comboTime = 0;
+  saveBest();
+  tone(220, 0.18, 'sawtooth', 0.04);
+  tone(120, 0.32, 'sine', 0.05);
+  buzz(40);
+  syncHud();
+}
+
 function landPiece() {
+  const roof = currentRoof();
   const top = floors[floors.length - 1];
-  const roofY = floorTop(floors.length - 1);
-  const b1 = top.center - top.width / 2;
-  const b2 = top.center + top.width / 2;
+  const b1 = Math.min(roof.left.x, roof.right.x);
+  const b2 = Math.max(roof.left.x, roof.right.x);
   const a1 = piece.left;
   const a2 = piece.left + piece.width;
   const left = Math.max(a1, b1);
   const right = Math.min(a2, b2);
   const overlap = right - left;
-  const minKeep = Math.max(22, top.width * 0.12);
+  const minKeep = Math.max(18, piece.width * 0.1);
   if (overlap < minKeep) {
     failPiece();
     return;
   }
   const dropCenter = (a1 + a2) / 2;
-  const offset = Math.abs(dropCenter - top.center);
+  const localTopY = floorTop(floors.length - 1) - FLOOR_H;
+  const localCenter = localXFromScreen(dropCenter, localTopY);
+  const offset = Math.abs(localCenter - top.center);
   const perfect = offset <= Math.max(8, top.width * 0.045);
   floors.push({
-    center: dropCenter,
+    center: localCenter,
     width: piece.width,
     cells: piece.cells,
     form: piece.form || 'cubes',
     seed: piece.seed,
     flash: perfect ? 0.55 : 0.18,
   });
+  leanVel += (localCenter - top.center) / 140;
   hangForm = Math.random() < 0.48 ? 'box' : 'cubes';
+  const roofY = (roof.left.y + roof.right.y) / 2;
   spawnDust(dropCenter, roofY, piece.width);
   award(perfect, dropCenter, roofY - FLOOR_H - 8);
   milestone(builtFloors());
@@ -430,6 +529,7 @@ function update(dt) {
   const camTarget = alt * FLOOR_H;
   cam += (camTarget - cam) * Math.min(1, dt * 5.5);
   if (shake > 0) shake = Math.max(0, shake - dt * 28);
+  updateSway(dt);
 
   if (mode === 'play' && phase === 'swing' && combo > 0) {
     comboTime -= dt;
@@ -446,7 +546,8 @@ function update(dt) {
     piece.top += piece.vy * dt;
     piece.rot += piece.vr * dt;
     if (mode === 'play' && !piece.failing) {
-      const roofY = floorTop(floors.length - 1);
+      const roof = currentRoof();
+      const roofY = (roof.left.y + roof.right.y) / 2;
       if (piece.top + FLOOR_H >= roofY) landPiece();
     }
   }
@@ -821,12 +922,20 @@ function draw() {
   }
   drawSky();
   drawGround();
+  ctx.save();
+  if (floors.length) {
+    const pivot = towerPivot();
+    ctx.translate(pivot.x, pivot.y);
+    ctx.rotate(lean);
+    ctx.translate(-pivot.x, -pivot.y);
+  }
   floors.forEach((floor, index) => {
     const y = floorTop(index);
-    if (y > h + 30 || y < -80) return;
+    if (y > h + 80 || y < -120) return;
     drawBlocks(floor.center - floor.width / 2, y, floor.width, floor.cells, floor.form, floor.seed, floor.flash);
     drawAntenna(index);
   });
+  ctx.restore();
   debris.forEach((d) => {
     ctx.save();
     ctx.globalAlpha = Math.max(0, d.life);

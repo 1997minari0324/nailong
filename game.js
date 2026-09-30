@@ -1041,10 +1041,9 @@ function drawGuide() {
 }
 
 function drawAvatar() {
-  const s = shooterPos();
-  const r = radius * 1.15;
-  const x = s.x - radius * 2.7;
-  const y = s.y + radius * 0.15;
+  const r = Math.min(26, Math.max(18, radius * 0.95));
+  const x = r + 12;
+  const y = h - r - 14;
   ctx.save();
   ctx.beginPath();
   ctx.fillStyle = 'rgba(40,80,20,0.12)';

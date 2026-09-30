@@ -3,7 +3,15 @@
 const BEST_KEY = 'nailong-jump-best';
 const SKIN_KEY = 'nailong-jump-skin';
 const MUTE_KEY = 'nailong-jump-mute';
-const CHARGE_MS = 1150;
+const CHARGE_MS = 1280;
+const MIN_JUMP = 70;
+const MAX_JUMP = 214;
+const DIRS = [
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+  { x: 0, y: -1 },
+];
 
 const SKINS = [
   { id: 'happy', name: '开心奶龙', file: 'assets/happy.jpg', body: '#FFC44D', belly: '#fff6d2', egg: false },
@@ -113,46 +121,104 @@ function worldPos(p) {
   };
 }
 
-function nextDistance() {
-  const n = platforms.length;
-  const ramp = Math.min(100, score * 1.5);
-  const min = n < 4 ? 156 : 168;
-  const span = n < 4 ? 36 : 48 + ramp;
-  return min + Math.random() * span;
+function pickGap(index) {
+  if (index < 2) return 32 + Math.random() * 14;
+  const roll = Math.random();
+  if (roll < 0.36) return 26 + Math.random() * 16;
+  if (roll < 0.7) return 58 + Math.random() * 20;
+  return 96 + Math.random() * 26;
 }
 
-function makePlatform(x, y, side, starter) {
-  const hard = !starter && score >= 6 && Math.random() < Math.min(0.42, 0.08 + score / 90);
-  const moving = !starter && score >= 10 && Math.random() < Math.min(0.38, (score - 8) / 80);
-  const shapes = ['cube', 'wide', 'long', 'trap'];
-  const shape = starter ? 'wide' : shapes[(Math.random() * shapes.length) | 0];
-  let r = starter ? 48 : shape === 'wide' ? 54 : shape === 'long' ? 36 : shape === 'trap' ? 32 : 42;
-  if (hard) r = Math.max(26, r * 0.7);
+function pickBlock(index) {
+  const shapes = ['cube', 'wide', 'long', 'cylinder', 'trap'];
+  const shape = index < 1 ? 'cube' : shapes[(Math.random() * shapes.length) | 0];
+  const scale = 0.78 + Math.random() * 0.5;
+  let hx;
+  let hy;
+  let h;
+  if (shape === 'cube') {
+    const s = 36 * scale;
+    hx = s;
+    hy = s;
+    h = 44 + Math.random() * 16;
+  } else if (shape === 'wide') {
+    hx = 54 * scale;
+    hy = 28 * scale;
+    h = 38 + Math.random() * 14;
+  } else if (shape === 'long') {
+    hx = 28 * scale;
+    hy = 52 * scale;
+    h = 56 + Math.random() * 18;
+  } else if (shape === 'cylinder') {
+    const s = 34 * scale;
+    hx = s;
+    hy = s * 0.62;
+    h = 40 + Math.random() * 20;
+  } else {
+    hx = 32 * scale;
+    hy = 30 * scale;
+    h = 46 + Math.random() * 14;
+  }
   return {
-    x, y, side, shape,
-    r,
-    h: starter ? 62 : shape === 'long' ? 78 + Math.random() * 16 : 52 + Math.random() * 24,
+    shape,
+    hx: Math.max(24, Math.min(62, hx)),
+    hy: Math.max(24, Math.min(62, hy)),
+    h,
+  };
+}
+
+function makePlatform(x, y, heading, block, starter) {
+  return {
+    x,
+    y,
+    heading,
+    shape: block.shape,
+    hx: block.hx,
+    hy: block.hy,
+    h: starter ? 58 : block.h,
     skin: (Math.random() * SKINS.length) | 0,
-    moveAmp: moving ? 20 + Math.random() * 22 : 0,
-    moveSpeed: 1.15 + Math.random() * 1.3,
-    phase: Math.random() * Math.PI * 2,
+    moveAmp: 0,
   };
 }
 
 function addPlatform(starter) {
   if (!platforms.length) {
-    platforms.push(makePlatform(0, 0, 1, true));
+    platforms.push(makePlatform(0, 0, 0, pickBlock(0), true));
     return;
   }
   const last = platforms[platforms.length - 1];
-  const side = -last.side;
-  const dist = nextDistance();
-  platforms.push(makePlatform(
-    last.x + side * dist * 0.78,
-    last.y + dist * 0.62,
-    side,
-    false
-  ));
+  const index = platforms.length;
+  const choices = [0, 1, 2].filter((h) => h !== (last.heading + 2) % 4);
+  let heading = index === 1 ? 0 : index === 2 ? 1 : last.heading;
+  if (index > 2) {
+    const turns = choices.filter((h) => h !== last.heading);
+    heading = Math.random() < 0.3 && choices.includes(last.heading)
+      ? last.heading
+      : turns[(Math.random() * turns.length) | 0];
+  }
+
+  for (let turn = 0; turn < choices.length; turn++) {
+    const start = Math.max(0, choices.indexOf(heading));
+    const tryHeading = choices[(start + turn) % choices.length];
+    const block = pickBlock(index);
+    const dir = DIRS[tryHeading];
+    const fromHalf = dir.x !== 0 ? last.hx : last.hy;
+    const toHalf = dir.x !== 0 ? block.hx : block.hy;
+    let dist = fromHalf + toHalf + pickGap(index);
+    dist = Math.max(MIN_JUMP + 12, Math.min(MAX_JUMP - 8, dist));
+    const x = last.x + dir.x * dist;
+    const y = last.y + dir.y * dist;
+    const crowded = platforms.some((p) => {
+      return Math.abs(p.x - x) < p.hx + block.hx + 16 && Math.abs(p.y - y) < p.hy + block.hy + 16;
+    });
+    if (crowded) continue;
+    platforms.push(makePlatform(x, y, tryHeading, block, false));
+    return;
+  }
+  const block = pickBlock(index);
+  const dir = DIRS[last.heading];
+  const dist = Math.min(MAX_JUMP - 8, last.hx + block.hx + 80);
+  platforms.push(makePlatform(last.x + dir.x * dist, last.y + dir.y * dist, last.heading, block, false));
 }
 
 function ensureAhead() {
@@ -178,8 +244,8 @@ function startGame() {
   player.x = origin.x;
   player.y = origin.y;
   player.lift = 0;
-  camera.x = 0;
-  camera.y = -30;
+  camera.x = platforms[1] ? (platforms[0].x + platforms[1].x) / 2 : 0;
+  camera.y = platforms[1] ? (platforms[0].y + platforms[1].y) / 2 : 0;
   mode = 'ready';
   overlay.classList.remove('show');
   syncHud();
@@ -192,7 +258,7 @@ function showPick() {
     return '<button type="button" class="skin' + on + '" data-skin="' + index + '"><img src="' + skin.file + '" alt=""><span>' + skin.name + '</span></button>';
   }).join('');
   card.innerHTML = '<h1>奶龙跳一跳</h1>'
-    + '<p class="lead">按住蓄力，松手起跳。跳到方块中心分数更高，连续跳中会一直加分。</p>'
+    + '<p class="lead">按住蓄力，松手起跳。每一跳都是横平或竖直的直线。近的少按一会，远的要按得更久。</p>'
     + '<div class="skins">' + skins + '</div>'
     + '<button class="primary" type="button" data-act="start">开始跳</button>'
     + '<p class="note">最高 ' + best + ' 分</p>';
@@ -277,7 +343,7 @@ function releaseCharge(now) {
     y: from.y,
     ux: dx / len,
     uy: dy / len,
-    dist: 48 + charge * 360,
+    dist: MIN_JUMP + charge * (MAX_JUMP - MIN_JUMP),
     t: 0,
     dur: 0.4 + charge * 0.2,
   };
@@ -289,14 +355,15 @@ function releaseCharge(now) {
 function finishJump() {
   const plat = platforms[current + 1];
   const next = worldPos(plat);
-  const d = Math.hypot(player.x - next.x, player.y - next.y);
+  const dx = Math.abs(player.x - next.x);
+  const dy = Math.abs(player.y - next.y);
   player.lift = 0;
-  if (d <= plat.r + 8) {
+  if (dx <= plat.hx + 8 && dy <= plat.hy + 8) {
     current += 1;
     const landed = worldPos(platforms[current]);
     player.x = landed.x;
     player.y = landed.y;
-    const perfect = d <= Math.max(14, plat.r * 0.36);
+    const perfect = dx <= Math.max(12, plat.hx * 0.34) && dy <= Math.max(12, plat.hy * 0.34);
     addScore(perfect);
     ensureAhead();
     mode = 'ready';
@@ -336,8 +403,12 @@ function update(dt) {
   }
 
   if (mode === 'ready' || mode === 'charge' || mode === 'jump' || mode === 'fall') {
-    camera.x += (player.x * 0.22 - camera.x) * Math.min(1, dt * 6);
-    camera.y += (player.y - 36 - camera.y) * Math.min(1, dt * 6);
+    const here = platforms[current];
+    const ahead = platforms[Math.min(platforms.length - 1, current + (mode === 'fall' ? 0 : 1))];
+    const focusX = here && ahead ? (here.x + ahead.x) / 2 : player.x;
+    const focusY = here && ahead ? (here.y + ahead.y) / 2 : player.y;
+    camera.x += (focusX - camera.x) * Math.min(1, dt * 6);
+    camera.y += (focusY - camera.y) * Math.min(1, dt * 6);
   }
 
   floaters.forEach((item) => {
@@ -402,71 +473,92 @@ function drawImageCover(img, x, y, width, height) {
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
+function paintFace(skin, x, y, width, height) {
+  const img = images[skin.id];
+  if (!img.complete || !img.naturalWidth || width < 8 || height < 8) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+  drawImageCover(img, x, y, width, height);
+  ctx.restore();
+}
+
+function drawBoxPlatform(c, p, skin) {
+  const topW = p.hx;
+  const botW = p.shape === 'trap' ? p.hx * 1.28 : p.hx;
+  const lip = Math.max(12, Math.min(18, p.hy * 0.45));
+  const frontTop = c.y + 4;
+  const top = frontTop - lip;
+  const bot = frontTop + p.h;
+  ctx.beginPath();
+  ctx.ellipse(c.x, bot + 8, botW * 0.85, 9, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(40, 80, 20, 0.14)';
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.14)';
+  ctx.beginPath();
+  ctx.moveTo(c.x + topW, frontTop);
+  ctx.lineTo(c.x + topW + 12, top);
+  ctx.lineTo(c.x + botW + 12, bot - lip);
+  ctx.lineTo(c.x + botW, bot);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = skin.body;
+  ctx.beginPath();
+  ctx.moveTo(c.x - botW, bot);
+  ctx.lineTo(c.x + botW, bot);
+  ctx.lineTo(c.x + topW, frontTop);
+  ctx.lineTo(c.x - topW, frontTop);
+  ctx.closePath();
+  ctx.fill();
+  paintFace(skin, c.x - topW + 8, frontTop + 6, topW * 2 - 16, p.h - 12);
+  ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = skin.belly;
+  ctx.fillRect(c.x - topW, top, topW * 2, lip);
+  ctx.strokeRect(c.x - topW + 1, top + 1, topW * 2 - 2, lip - 2);
+  ctx.beginPath();
+  ctx.arc(c.x, top + lip / 2, 5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.stroke();
+}
+
+function drawCylinderPlatform(c, p, skin) {
+  const rx = p.hx;
+  const ry = Math.max(9, Math.min(15, p.hy * 0.7));
+  const top = c.y;
+  const bot = c.y + p.h;
+  ctx.beginPath();
+  ctx.ellipse(c.x, bot + 6, rx * 0.85, 8, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(40, 80, 20, 0.14)';
+  ctx.fill();
+  ctx.fillStyle = skin.body;
+  ctx.beginPath();
+  ctx.rect(c.x - rx, top, rx * 2, p.h);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(c.x, bot, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  paintFace(skin, c.x - rx + 10, top + 8, rx * 2 - 20, Math.max(12, p.h - 14));
+  ctx.fillStyle = skin.belly;
+  ctx.beginPath();
+  ctx.ellipse(c.x, top, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(c.x, top, 5, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
 function drawPlatform(p) {
   const pos = worldPos(p);
   const c = project(pos.x, pos.y, 0);
   const skin = SKINS[p.skin];
-  const half = p.r;
-  const topW = p.shape === 'trap' ? half * 0.78 : half;
-  const botW = p.shape === 'trap' ? half * 1.16 : half;
-  const depth = p.shape === 'long' ? 28 : p.shape === 'wide' ? 18 : 22;
-  const side = p.shape === 'long' ? 22 : 16;
-  const yFront = c.y + depth * 0.45;
-  const yBack = c.y - depth * 0.55;
-  const yBot = yFront + p.h;
-  const ox = -side / 2;
-  const front = [
-    [c.x + ox - botW, yBot],
-    [c.x + ox + botW, yBot],
-    [c.x + ox + topW, yFront],
-    [c.x + ox - topW, yFront],
-  ];
-  const cap = [
-    [c.x + ox - topW, yFront],
-    [c.x + ox + topW, yFront],
-    [c.x + ox + topW + side, yBack],
-    [c.x + ox - topW + side, yBack],
-  ];
-  const wall = [
-    front[1],
-    [front[1][0] + side, yBot - (yFront - yBack)],
-    cap[2],
-    front[2],
-  ];
-  ctx.beginPath();
-  ctx.ellipse(c.x + 4, yBot + 10, botW * 0.92, 12, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(40, 80, 20, 0.16)';
-  ctx.fill();
-  fillPoly(wall, 'rgba(0,0,0,0.18)');
-  ctx.save();
-  ctx.fillStyle = skin.body;
-  fillPoly(front, skin.body);
-  ctx.clip();
-  const img = images[skin.id];
-  const faceX = c.x + ox - botW + 7;
-  const faceW = botW * 2 - 14;
-  const faceH = p.h - 10;
-  if (img.complete && img.naturalWidth && faceW > 8 && faceH > 8) {
-    drawImageCover(img, faceX, yFront + 5, faceW, faceH);
-  }
-  ctx.restore();
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.82)';
-  ctx.lineWidth = 2;
-  strokePoly(front);
-  ctx.restore();
-  fillPoly(cap, skin.belly);
-  fillPoly(cap, 'rgba(255,255,255,0.35)');
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth = 2;
-  strokePoly(cap);
-  ctx.restore();
-  ctx.beginPath();
-  ctx.ellipse(c.x, c.y, Math.max(6, topW * 0.22), 5, 0, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  if (p.shape === 'cylinder') drawCylinderPlatform(c, p, skin);
+  else drawBoxPlatform(c, p, skin);
 }
 
 function drawJumper() {
@@ -535,13 +627,48 @@ function drawFloaters() {
   });
 }
 
-function drawHint() {
-  if (didJump || mode === 'pick' || mode === 'over' || mode === 'fall') return;
+function drawRoute() {
+  const here = platforms[current];
+  const next = platforms[current + 1];
+  if (!here || !next || mode === 'fall' || mode === 'over') return;
+  const a = project(here.x, here.y, 0);
+  const b = project(next.x, next.y, 0);
   ctx.save();
-  ctx.textAlign = 'center';
-  ctx.font = '700 15px PingFang SC, sans-serif';
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.setLineDash([6, 8]);
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHint() {
+  if (mode === 'pick' || mode === 'over' || mode === 'fall' || mode === 'jump') return;
+  const bw = Math.min(210, w - 96);
+  const x = (w - bw) / 2;
+  const y = h - 36;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.fillRect(x, y, bw, 12);
+  if (charge > 0.01) {
+    ctx.fillStyle = '#ffc107';
+    ctx.fillRect(x, y, bw * charge, 12);
+  }
+  ctx.font = '700 13px PingFang SC, sans-serif';
   ctx.fillStyle = 'rgba(40, 80, 20, 0.82)';
-  ctx.fillText(mode === 'charge' ? '松手起跳' : '按住蓄力，松手起跳', w / 2, h - 28);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('近', x - 8, y + 6);
+  ctx.textAlign = 'left';
+  ctx.fillText('远', x + bw + 8, y + 6);
+  if (!didJump) {
+    ctx.textAlign = 'center';
+    ctx.font = '700 15px PingFang SC, sans-serif';
+    ctx.fillText(mode === 'charge' ? '松手起跳' : '按住蓄力，近的少按，远的多按', w / 2, y - 16);
+  }
   ctx.restore();
 }
 
@@ -551,8 +678,9 @@ function render() {
   if (mode !== 'pick') {
     const order = platforms.map((p, index) => ({ p, index }));
     order.sort((a, b) => b.p.y - a.p.y);
+    drawRoute();
     order.forEach((item) => {
-      if (item.index >= current - 1 && item.index <= current + 5) drawPlatform(item.p);
+      if (item.index >= current - 1 && item.index <= current + 1) drawPlatform(item.p);
     });
     if (mode !== 'over') drawJumper();
     drawFloaters();

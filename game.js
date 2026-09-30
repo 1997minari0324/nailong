@@ -4,6 +4,8 @@ const COLS = 8;
 const SHOT_SPEED = 1020;
 const BEST_KEY = 'nailong-bubble-best';
 const MUTE_KEY = 'nailong-bubble-mute';
+const STAR_KEY = 'nailong-level-stars';
+const LEVEL_SCORE_KEY = 'nailong-level-scores';
 
 const TYPES = [
   { name: '开心', file: 'assets/happy.jpg', color: '#FFC400', z: 1.08, oy: -0.03 },
@@ -31,6 +33,8 @@ const S = {
   shotEvery: 10,
   cleared: 0,
   goal: 10,
+  shotsUsed: 0,
+  pressureCount: 0,
   angle: -Math.PI / 2,
   pressing: false,
   cancel: false,
@@ -291,6 +295,46 @@ function buildGrid(rows) {
   S.rev++;
 }
 
+function readMap(storageKey) {
+  try {
+    const data = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    return data && typeof data === 'object' ? data : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveLevelResult(level, stars, levelScore) {
+  const starsMap = readMap(STAR_KEY);
+  const scoresMap = readMap(LEVEL_SCORE_KEY);
+  const prevStars = Number(starsMap[level]) || 0;
+  const prevScore = Number(scoresMap[level]) || 0;
+  const improved = (prevStars > 0 || prevScore > 0) && (stars > prevStars || levelScore > prevScore);
+  starsMap[level] = Math.max(prevStars, stars);
+  scoresMap[level] = Math.max(prevScore, levelScore);
+  try {
+    localStorage.setItem(STAR_KEY, JSON.stringify(starsMap));
+    localStorage.setItem(LEVEL_SCORE_KEY, JSON.stringify(scoresMap));
+  } catch (e) { /* ignore */ }
+  return { bestStars: starsMap[level], bestScore: scoresMap[level], improved };
+}
+
+function rateLevel() {
+  const levelScore = Math.max(0, S.score - S.scoreBase);
+  const two = S.goal * 100;
+  const three = S.goal * 180;
+  let stars = 1;
+  if (levelScore >= two) stars = 2;
+  if (levelScore >= three && S.pressureCount === 0) stars = 3;
+  return { stars, levelScore, two, three };
+}
+
+function starHtml(n) {
+  let html = '';
+  for (let i = 1; i <= 3; i++) html += i <= n ? '<span>★</span>' : '<span class="off">★</span>';
+  return html;
+}
+
 function rememberBest() {
   if (S.score > S.best) {
     S.best = S.score;
@@ -326,6 +370,8 @@ function begin(level, score) {
   S.shotEvery = plan.shots;
   S.untilDrop = plan.shots;
   S.cleared = 0;
+  S.shotsUsed = 0;
+  S.pressureCount = 0;
   if (level === 1 && score === 0) S.didShoot = false;
   buildGrid(rowsFor(plan.rowsWanted));
   S.goal = Math.min(plan.goal, Math.max(8, S.grid.size - 6));
@@ -350,12 +396,14 @@ function showMenu() {
 function onWin() {
   if (S.mode === 'won') return;
   S.mode = 'won';
-  const bonus = 200 * S.level;
+  const rating = rateLevel();
+  const bonus = 200 * S.level * rating.stars;
   S.score += bonus;
+  const saved = saveLevelResult(S.level, rating.stars, rating.levelScore);
   rememberBest();
   sfxWin();
-  confetti();
-  showEnd(true, bonus);
+  confetti(rating.stars);
+  showEnd(true, bonus, rating, saved);
 }
 
 function onLoseSoon() {
@@ -372,20 +420,50 @@ function finishLose() {
   showEnd(false, 0);
 }
 
-function showEnd(win, bonus) {
+function showEnd(win, bonus, rating, saved) {
   const record = newRecord ? '<p class="record">新纪录！</p>' : '';
   const nextStyle = unlockName(S.level + 1);
   const nextHint = nextStyle
     ? '下一关会多出「' + nextStyle + '」'
     : '下一关种类不变，但会更挤，顶上也压得更快';
   card.innerHTML = win
-    ? '<h1>过关啦</h1><p class="end-copy">打掉 ' + S.cleared + ' 个，第 ' + S.level + ' 关通过</p><p class="score-lg">' + S.score + ' 分</p><p class="note">过关奖励 +' + bonus + '。' + nextHint + '</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="next">下一关</button><button class="ghost" type="button" data-act="menu">回首页</button></div>'
+    ? winCard(bonus, rating, saved, nextHint)
     : '<h1>挤到下面了</h1><p class="end-copy">还差 ' + Math.max(0, S.goal - S.cleared) + ' 个就过关了</p><p class="score-lg">' + S.score + ' 分</p><p class="note">最高 ' + S.best + ' 分</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="retry">再试一次</button><button class="ghost" type="button" data-act="menu">回首页</button></div>';
   overlay.classList.add('show');
   syncHud();
 }
 
+function winCard(bonus, rating, saved, nextHint) {
+  const scenes = [
+    { id: 'flower', title: '奶龙撒花啦', face: 'assets/happy.jpg', line: '花花送给你' },
+    { id: 'dance', title: '奶龙跳舞啦', face: 'assets/wink.jpg', line: '跟着节拍晃一晃' },
+    { id: 'cheer', title: '奶龙欢呼啦', face: 'assets/wow.jpg', line: '跳起来恭喜你' },
+  ];
+  const scene = scenes[(S.level - 1) % scenes.length];
+  const motion = reduceMotion ? ' still' : '';
+  let petals = '';
+  const petalCount = rating.stars >= 3 ? 12 : 8;
+  for (let i = 0; i < petalCount; i++) petals += '<i class="petal"></i>';
+  const fresh = saved.improved ? '<p class="record">刷新了本关纪录！</p>' : '';
+  return '<div class="celebrate scene-' + scene.id + ' star-' + rating.stars + motion + '">' + petals
+    + '<img class="nailong-pop" src="' + scene.face + '" alt="奶龙">'
+    + '<p class="scene-line">' + scene.title + ' · ' + scene.line + '</p></div>'
+    + '<h1>恭喜过关</h1>'
+    + '<p class="stars" aria-label="' + rating.stars + '星">' + starHtml(rating.stars) + '</p>'
+    + '<p class="score-lg">' + rating.levelScore + ' 分</p>'
+    + '<p class="end-copy">第 ' + S.level + ' 关本关得分 · 用了 ' + S.shotsUsed + ' 发</p>'
+    + '<p class="note">总分 ' + S.score + ' · 过关奖励 +' + bonus + '</p>'
+    + '<p class="note">本关最佳 ' + starHtml(saved.bestStars) + ' · ' + saved.bestScore + ' 分</p>'
+    + fresh
+    + '<p class="note">二星 ' + rating.two + ' 分，三星 ' + rating.three + ' 分且顶上没下压</p>'
+    + '<p class="note">' + nextHint + '</p>'
+    + '<div class="actions"><button class="primary" type="button" data-act="next">下一关</button>'
+    + '<button class="replay" type="button" data-act="retry">再玩本关</button>'
+    + '<button class="ghost" type="button" data-act="menu">回首页</button></div>';
+}
+
 function pushDown() {
+  S.pressureCount += 1;
   const next = new Map();
   for (const b of S.grid.values()) {
     const nb = { r: b.r + 1, c: b.c, type: b.type };
@@ -630,6 +708,7 @@ function shoot() {
   S.next = rollType();
   S.load = 0;
   S.didShoot = true;
+  S.shotsUsed += 1;
   tone(460, 0.07, 'triangle', 0.035);
 }
 
@@ -771,9 +850,10 @@ function toggleMute() {
   }
 }
 
-function confetti() {
+function confetti(stars) {
   if (!w) return;
-  for (let i = 0; i < 42; i++) {
+  const count = stars >= 3 ? 70 : stars === 2 ? 46 : 28;
+  for (let i = 0; i < count; i++) {
     S.particles.push({
       x: Math.random() * w,
       y: -20 - Math.random() * 80,

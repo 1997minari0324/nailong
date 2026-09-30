@@ -377,7 +377,7 @@ function startScene() {
   for (let i = images.length - 2; i >= 1; i--) seq.push(i);
   let tick = 0;
   const step = () => {
-    tick += 0.045;
+    tick += 0.05;
     const pos = tick % seq.length;
     const i0 = Math.floor(pos);
     const i1 = (i0 + 1) % seq.length;
@@ -486,7 +486,7 @@ function showEnd(win, bonus, rating, saved) {
 }
 
 function winCard(bonus, rating, saved, nextHint) {
-  const pack = (prefix) => [1, 2, 3, 4].map((n) => 'assets/act-' + prefix + n + '.jpg');
+  const pack = (prefix) => ['1', '1b', '2', '2b', '3', '3b', '4'].map((n) => 'assets/act-' + prefix + n + '.jpg');
   const scenes = [
     { title: '奶龙撒花啦', line: '奶龙把花撒给你', frames: pack('flower-') },
     { title: '奶龙跳舞啦', line: '奶龙自己在跳舞', frames: pack('dance-') },

@@ -242,9 +242,9 @@ function lookTarget() {
     maxY = Math.max(maxY, p.y + p.hy + 24);
   }
   if (!isFinite(minX)) return { x: player.x, y: player.y, scale: 1 };
-  const spanX = Math.max(140, maxX - minX);
-  const spanY = Math.max(140, maxY - minY);
-  const scale = Math.max(0.56, Math.min(1, (w - 36) / spanX, (h * 0.68) / spanY));
+  const spanX = Math.max(160, maxX - minX);
+  const spanY = Math.max(160, maxY - minY);
+  const scale = Math.max(0.38, Math.min(1, (w - 20) / spanX, (h * 0.58) / spanY));
   return {
     x: (minX + maxX) / 2,
     y: (minY + maxY) / 2,
@@ -287,7 +287,7 @@ function showPick() {
     return '<button type="button" class="skin' + on + '" data-skin="' + index + '"><img src="' + skin.file + '" alt=""><span>' + skin.name + '</span></button>';
   }).join('');
   card.innerHTML = '<h1>奶龙跳一跳</h1>'
-    + '<p class="lead">按住蓄力，松手起跳。每一跳都是横平或竖直的直线。近的少按一会，远的要按得更久。</p>'
+    + '<p class="lead">按住蓄力，松手起跳。每一跳都是横平或竖直的直线。跳到方块的哪个位置，就停在那里。</p>'
     + '<div class="skins">' + skins + '</div>'
     + '<button class="primary" type="button" data-act="start">开始跳</button>'
     + '<p class="note">最高 ' + best + ' 分</p>';
@@ -357,21 +357,20 @@ function beginCharge(now) {
 function releaseCharge(now) {
   if (mode !== 'charge') return;
   charge = Math.min(1, (now - chargeFrom) / CHARGE_MS);
-  const from = worldPos(platforms[current]);
+  const base = platforms[current];
   const next = platforms[current + 1];
   if (!next) {
     mode = 'ready';
     return;
   }
-  const target = worldPos(next);
-  const dx = target.x - from.x;
-  const dy = target.y - from.y;
-  const len = Math.hypot(dx, dy) || 1;
+  const dx = next.x - base.x;
+  const dy = next.y - base.y;
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
   jump = {
-    x: from.x,
-    y: from.y,
-    ux: dx / len,
-    uy: dy / len,
+    x: player.x,
+    y: player.y,
+    ux: horizontal ? Math.sign(dx || 1) : 0,
+    uy: horizontal ? 0 : Math.sign(dy || 1),
     dist: MIN_JUMP + charge * (MAX_JUMP - MIN_JUMP),
     t: 0,
     dur: 0.4 + charge * 0.2,
@@ -383,16 +382,12 @@ function releaseCharge(now) {
 
 function finishJump() {
   const plat = platforms[current + 1];
-  const next = worldPos(plat);
-  const dx = Math.abs(player.x - next.x);
-  const dy = Math.abs(player.y - next.y);
+  const dx = player.x - plat.x;
+  const dy = player.y - plat.y;
   player.lift = 0;
-  if (dx <= plat.hx + 8 && dy <= plat.hy + 8) {
+  if (Math.abs(dx) <= plat.hx + 8 && Math.abs(dy) <= plat.hy + 8) {
     current += 1;
-    const landed = worldPos(platforms[current]);
-    player.x = landed.x;
-    player.y = landed.y;
-    const perfect = dx <= Math.max(12, plat.hx * 0.34) && dy <= Math.max(12, plat.hy * 0.34);
+    const perfect = Math.abs(dx) <= Math.max(12, plat.hx * 0.34) && Math.abs(dy) <= Math.max(12, plat.hy * 0.34);
     addScore(perfect);
     ensureAhead();
     mode = 'ready';
@@ -408,14 +403,8 @@ function update(dt) {
   time += dt;
   if (mode === 'charge') {
     charge = Math.min(1, (performance.now() - chargeFrom) / CHARGE_MS);
-    const ground = worldPos(platforms[current]);
-    player.x = ground.x;
-    player.y = ground.y;
     player.lift = 0;
   } else if (mode === 'ready' && platforms[current]) {
-    const ground = worldPos(platforms[current]);
-    player.x = ground.x;
-    player.y = ground.y;
     player.lift = Math.sin(time * 3) * 3;
   } else if (mode === 'jump' && jump) {
     jump.t += dt;

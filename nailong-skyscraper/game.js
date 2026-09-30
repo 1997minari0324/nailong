@@ -427,13 +427,7 @@ function localXFromScreen(screenX, localY) {
   return pivot.x + (screenX - pivot.x + dy * s) / c;
 }
 
-function updateSway(dt) {
-  if (floors.length < 2) {
-    leanVel += -lean * 8 * dt;
-    lean += leanVel * dt;
-    leanVel *= Math.exp(-2 * dt);
-    return;
-  }
+function stackBalance() {
   const base = floors[0];
   let mass = 0;
   let mx = 0;
@@ -444,27 +438,45 @@ function updateSway(dt) {
     mx += floor.center * m;
     mh += (i + 0.5) * FLOOR_H * m;
   });
-  const comX = mx / mass;
-  const comH = mh / mass;
-  const pivot = base.center;
-  const offset = comX - pivot;
-  const target = Math.max(-0.26, Math.min(0.26, offset / Math.max(64, comH * 0.5)));
-  if (mode === 'play') {
-    leanVel += (target - lean) * 20 * dt;
-    leanVel *= Math.exp(-2.8 * dt);
-  } else {
-    leanVel += Math.sign(lean || offset || 1) * 1.8 * dt;
-  }
-  lean += leanVel * dt;
-  const leanedCom = pivot + offset * Math.cos(lean) - comH * Math.sin(lean);
-  const outside = leanedCom - pivot;
   const half = base.width * 0.5;
-  if (mode === 'play' && Math.abs(outside) > half) {
-    leanVel += Math.sign(outside) * 2.4 * dt;
+  const offset = mx / mass - base.center;
+  const dead = Math.max(10, half * 0.12);
+  return {
+    offset: Math.abs(offset) < dead ? 0 : offset,
+    comH: mh / mass,
+    half,
+  };
+}
+
+function updateSway(dt) {
+  if (floors.length < 2) {
+    lean = 0;
+    leanVel = 0;
+    return;
   }
-  if (mode === 'play' && (Math.abs(lean) > 0.46 || Math.abs(outside) > half * 1.2)) {
-    topple();
+  const balance = stackBalance();
+  if (mode === 'over') {
+    leanVel += Math.sign(lean || balance.offset || 1) * 2.4 * dt;
+    lean += leanVel * dt;
+    return;
   }
+  if (mode !== 'play') return;
+  const comH = Math.max(80, balance.comH);
+  if (Math.abs(balance.offset) < balance.half) {
+    const restore = (980 / comH) * lean;
+    leanVel -= restore * dt;
+    const calm = balance.offset === 0 ? 9 : 3.4;
+    leanVel *= Math.exp(-calm * dt);
+    lean += leanVel * dt;
+    if (balance.offset === 0 && Math.abs(lean) < 0.008 && Math.abs(leanVel) < 0.04) {
+      lean = 0;
+      leanVel = 0;
+    }
+    return;
+  }
+  leanVel += Math.sign(balance.offset) * (1.1 + Math.abs(balance.offset) / balance.half) * dt;
+  lean += leanVel * dt;
+  if (Math.abs(lean) > 0.22) topple();
 }
 
 function topple() {
@@ -510,13 +522,20 @@ function landPiece() {
     seed: piece.seed,
     flash: perfect ? 0.55 : 0.18,
   });
-  leanVel += (localCenter - top.center) / 140;
+  const shift = localCenter - top.center;
+  const kick = Math.max(12, top.width * 0.08);
+  if (Math.abs(shift) > kick) {
+    const height = Math.max(1, floors.length) * FLOOR_H;
+    leanVel += (shift / top.width) * (height / 520);
+    shake = 4;
+  } else {
+    shake = 0;
+  }
   hangForm = Math.random() < 0.48 ? 'box' : 'cubes';
   const roofY = (roof.left.y + roof.right.y) / 2;
   spawnDust(dropCenter, roofY, piece.width);
   award(perfect, dropCenter, roofY - FLOOR_H - 8);
   milestone(builtFloors());
-  shake = perfect ? 3.5 : 7;
   piece = null;
   phase = 'swing';
   syncHud();

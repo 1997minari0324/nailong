@@ -75,6 +75,7 @@ let overShown = false;
 let floors = [];
 let piece = null;
 let hangForm = 'cubes';
+let hangCells = 2;
 let debris = [];
 let floaters = [];
 let puffs = [];
@@ -267,7 +268,7 @@ function showMenu() {
   phase = 'swing';
   card.innerHTML = '<h1>奶龙摩天楼</h1>'
     + '<p class="lead">方块里装着奶龙。它会左右摆，点一下放下来，叠到下面那块的正上方。</p>'
-    + '<p class="note">有的是正方块，有的是长方块。没对准会整块留在落下的位置。楼会跟着重心摇晃，摇出底座就会倒。</p>'
+    + '<p class="note">放下的是一块或两块正方块。没对准会留在落下的位置。偏出下面的底座，楼会倒。</p>'
     + '<button class="primary" type="button" data-act="start">开始盖楼</button>'
     + '<p class="note">最高入住 ' + best.people + ' 人 · 最高 ' + best.floors + ' 层</p>'
     + '<a class="ghost" href="../">返回</a>';
@@ -307,7 +308,8 @@ function resetTower() {
   puffs = [];
   piece = null;
   hangForm = 'cubes';
-  floors = [makeFloor(w / 2, 3, 'cubes', 0)];
+  hangCells = 2;
+  floors = [makeFloor(w / 2, 2, 'cubes', 0)];
   phase = 'swing';
   swingClock = (Math.PI / 2) / swingOmega();
 }
@@ -321,19 +323,28 @@ function startGame() {
   tone(520, 0.08, 'triangle', 0.04);
 }
 
+function hangWidth() {
+  return widthFor(hangCells, 'cubes');
+}
+
+function pickHangPiece() {
+  hangCells = Math.random() < 0.5 ? 1 : 2;
+  hangForm = 'cubes';
+}
+
 function release() {
   if (mode !== 'play' || phase !== 'swing') return;
   const pend = pendulum();
-  const top = floors[floors.length - 1];
   const vx = Math.max(-120, Math.min(120, pend.vx * 0.46));
+  const width = hangWidth();
   piece = {
-    left: pend.hx - top.width / 2,
+    left: pend.hx - width / 2,
     top: pend.hy + 4,
     vx,
     vy: 70,
-    width: top.width,
-    cells: top.cells,
-    form: hangForm,
+    width,
+    cells: hangCells,
+    form: 'cubes',
     seed: floors.length * 2 + 1,
     rot: 0,
     vr: 0,
@@ -427,56 +438,35 @@ function localXFromScreen(screenX, localY) {
   return pivot.x + (screenX - pivot.x + dy * s) / c;
 }
 
-function stackBalance() {
+function collapseDirection() {
   const base = floors[0];
   let mass = 0;
   let mx = 0;
-  let mh = 0;
-  floors.forEach((floor, i) => {
-    const m = Math.max(24, floor.width);
-    mass += m;
-    mx += floor.center * m;
-    mh += (i + 0.5) * FLOOR_H * m;
-  });
-  const half = base.width * 0.5;
-  const offset = mx / mass - base.center;
-  const dead = Math.max(10, half * 0.12);
-  return {
-    offset: Math.abs(offset) < dead ? 0 : offset,
-    comH: mh / mass,
-    half,
-  };
+  for (let i = 1; i < floors.length; i++) {
+    const below = floors[i - 1];
+    const floor = floors[i];
+    if (Math.abs(floor.center - below.center) > below.width / 2) {
+      return Math.sign(floor.center - below.center) || 1;
+    }
+    mass += floor.width;
+    mx += floor.center * floor.width;
+  }
+  if (!mass) return 0;
+  const com = mx / mass;
+  if (Math.abs(com - base.center) > base.width / 2) {
+    return Math.sign(com - base.center) || 1;
+  }
+  return 0;
 }
 
 function updateSway(dt) {
-  if (floors.length < 2) {
+  if (mode !== 'over') {
     lean = 0;
     leanVel = 0;
     return;
   }
-  const balance = stackBalance();
-  if (mode === 'over') {
-    leanVel += Math.sign(lean || balance.offset || 1) * 2.4 * dt;
-    lean += leanVel * dt;
-    return;
-  }
-  if (mode !== 'play') return;
-  const comH = Math.max(80, balance.comH);
-  if (Math.abs(balance.offset) < balance.half) {
-    const restore = (980 / comH) * lean;
-    leanVel -= restore * dt;
-    const calm = balance.offset === 0 ? 9 : 3.4;
-    leanVel *= Math.exp(-calm * dt);
-    lean += leanVel * dt;
-    if (balance.offset === 0 && Math.abs(lean) < 0.008 && Math.abs(leanVel) < 0.04) {
-      lean = 0;
-      leanVel = 0;
-    }
-    return;
-  }
-  leanVel += Math.sign(balance.offset) * (1.1 + Math.abs(balance.offset) / balance.half) * dt;
+  leanVel += Math.sign(leanVel || lean || 1) * 3.2 * dt;
   lean += leanVel * dt;
-  if (Math.abs(lean) > 0.22) topple();
 }
 
 function topple() {
@@ -522,16 +512,15 @@ function landPiece() {
     seed: piece.seed,
     flash: perfect ? 0.55 : 0.18,
   });
-  const shift = localCenter - top.center;
-  const kick = Math.max(12, top.width * 0.08);
-  if (Math.abs(shift) > kick) {
-    const height = Math.max(1, floors.length) * FLOOR_H;
-    leanVel += (shift / top.width) * (height / 520);
-    shake = 4;
-  } else {
-    shake = 0;
+  shake = 0;
+  const fallDir = collapseDirection();
+  if (fallDir) {
+    leanVel = fallDir * 0.65;
+    piece = null;
+    topple();
+    return;
   }
-  hangForm = Math.random() < 0.48 ? 'box' : 'cubes';
+  pickHangPiece();
   const roofY = (roof.left.y + roof.right.y) / 2;
   spawnDust(dropCenter, roofY, piece.width);
   award(perfect, dropCenter, roofY - FLOOR_H - 8);
@@ -974,9 +963,9 @@ function draw() {
 
   if (phase === 'swing') {
     const pend = pendulum();
-    const top = floors[floors.length - 1];
     drawCrane(pend.pivotX, pend.pivotY, pend.hx, pend.hy, true);
-    drawBlocks(pend.hx - top.width / 2, pend.hy + 4, top.width, top.cells, hangForm, floors.length * 2 + 1, 0);
+    const hangW = hangWidth();
+    drawBlocks(pend.hx - hangW / 2, pend.hy + 4, hangW, hangCells, 'cubes', floors.length * 2 + 1, 0);
   } else if (piece) {
     drawCrane(w / 2, 28, w / 2, 28, false);
     drawPiece(piece, piece.failing);

@@ -60,7 +60,7 @@ let jump = null;
 let fallT = 0;
 let player = { x: 0, y: 0, lift: 0 };
 let camera = { x: 0, y: 0, scale: 1 };
-const LOOK_AHEAD = 2;
+const LOOK_AHEAD = 1;
 let floaters = [];
 let puffs = [];
 let didJump = false;
@@ -227,28 +227,13 @@ function ensureAhead() {
 }
 
 function lookTarget() {
-  const from = current;
-  const to = Math.min(platforms.length - 1, current + LOOK_AHEAD);
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (let i = from; i <= to; i++) {
-    const p = platforms[i];
-    if (!p) continue;
-    minX = Math.min(minX, p.x - p.hx - 28);
-    maxX = Math.max(maxX, p.x + p.hx + 40);
-    minY = Math.min(minY, p.y - p.hy - 48);
-    maxY = Math.max(maxY, p.y + p.hy + 24);
-  }
-  if (!isFinite(minX)) return { x: player.x, y: player.y, scale: 1 };
-  const spanX = Math.max(160, maxX - minX);
-  const spanY = Math.max(160, maxY - minY);
-  const scale = Math.max(0.38, Math.min(1, (w - 20) / spanX, (h * 0.58) / spanY));
+  const here = platforms[current];
+  const next = platforms[current + 1];
+  if (!here) return { x: player.x, y: player.y };
+  if (!next) return { x: here.x, y: here.y };
   return {
-    x: (minX + maxX) / 2,
-    y: (minY + maxY) / 2,
-    scale,
+    x: (here.x + next.x) / 2,
+    y: (here.y + next.y) / 2,
   };
 }
 
@@ -274,7 +259,7 @@ function startGame() {
   const view = lookTarget();
   camera.x = view.x;
   camera.y = view.y;
-  camera.scale = view.scale;
+  camera.scale = 1;
   mode = 'ready';
   overlay.classList.remove('show');
   syncHud();
@@ -424,7 +409,7 @@ function update(dt) {
     const view = lookTarget();
     camera.x += (view.x - camera.x) * Math.min(1, dt * 5);
     camera.y += (view.y - camera.y) * Math.min(1, dt * 5);
-    camera.scale += (view.scale - camera.scale) * Math.min(1, dt * 5);
+    camera.scale = 1;
   }
 
   floaters.forEach((item) => {
@@ -696,20 +681,12 @@ function render() {
   if (mode !== 'pick') {
     const order = platforms.map((p, index) => ({ p, index }));
     order.sort((a, b) => b.p.y - a.p.y);
-    ctx.save();
-    const anchorX = w / 2;
-    const anchorY = h * 0.72;
-    const viewScale = camera.scale || 1;
-    ctx.translate(anchorX, anchorY);
-    ctx.scale(viewScale, viewScale);
-    ctx.translate(-anchorX, -anchorY);
     drawRoute();
     order.forEach((item) => {
       if (item.index >= current && item.index <= current + LOOK_AHEAD) drawPlatform(item.p);
     });
     if (mode !== 'over') drawJumper();
     drawFloaters();
-    ctx.restore();
     drawHint();
   }
 }

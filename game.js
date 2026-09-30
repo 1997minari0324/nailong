@@ -353,21 +353,44 @@ function stopScene() {
 
 function startScene() {
   stopScene();
-  const img = card.querySelector('.nailong-act');
-  if (!img) return;
-  const frames = (img.dataset.frames || '').split('|').filter(Boolean);
+  const canvas = card.querySelector('.nailong-act');
+  if (!canvas || !canvas.getContext) return;
+  const draw = canvas.getContext('2d');
+  const frames = (canvas.dataset.frames || '').split('|').filter(Boolean);
   if (!frames.length) return;
-  frames.forEach((src) => {
-    const pre = new Image();
-    pre.src = src;
+  const images = frames.map((src) => {
+    const im = new Image();
+    im.src = src;
+    return im;
   });
-  img.src = frames[0];
-  if (reduceMotion || frames.length < 2) return;
-  let i = 0;
-  sceneTimer = setInterval(() => {
-    i = (i + 1) % frames.length;
-    img.src = frames[i];
-  }, 260);
+  const paint = (im, alpha) => {
+    if (!im.complete || !im.naturalWidth) return;
+    draw.globalAlpha = alpha;
+    draw.drawImage(im, 0, 0, canvas.width, canvas.height);
+  };
+  if (reduceMotion || images.length < 2) {
+    images[0].onload = () => paint(images[0], 1);
+    return;
+  }
+  const seq = [];
+  for (let i = 0; i < images.length; i++) seq.push(i);
+  for (let i = images.length - 2; i >= 1; i--) seq.push(i);
+  let tick = 0;
+  const step = () => {
+    tick += 0.045;
+    const pos = tick % seq.length;
+    const i0 = Math.floor(pos);
+    const i1 = (i0 + 1) % seq.length;
+    let blend = pos - i0;
+    blend = blend * blend * (3 - 2 * blend);
+    draw.globalAlpha = 1;
+    draw.fillStyle = '#e7f6c9';
+    draw.fillRect(0, 0, canvas.width, canvas.height);
+    paint(images[seq[i0]], 1);
+    paint(images[seq[i1]], blend);
+    draw.globalAlpha = 1;
+  };
+  sceneTimer = setInterval(step, 32);
 }
 
 function begin(level, score) {
@@ -463,30 +486,21 @@ function showEnd(win, bonus, rating, saved) {
 }
 
 function winCard(bonus, rating, saved, nextHint) {
+  const pack = (prefix) => [1, 2, 3, 4].map((n) => 'assets/act-' + prefix + n + '.jpg');
   const scenes = [
-    {
-      id: 'flower',
-      title: '奶龙撒花啦',
-      line: '奶龙把花撒给你',
-      frames: ['assets/act-flower-1.jpg', 'assets/act-flower-2.jpg', 'assets/act-flower-3.jpg', 'assets/act-flower-4.jpg'],
-    },
-    {
-      id: 'dance',
-      title: '奶龙跳舞啦',
-      line: '奶龙自己在跳舞',
-      frames: ['assets/act-dance-1.jpg', 'assets/act-dance-2.jpg', 'assets/act-dance-4.jpg', 'assets/act-dance-3.jpg'],
-    },
-    {
-      id: 'cheer',
-      title: '奶龙欢呼啦',
-      line: '奶龙跳起来欢呼',
-      frames: ['assets/act-cheer-1.jpg', 'assets/act-cheer-2.jpg', 'assets/act-cheer-3.jpg', 'assets/act-cheer-4.jpg'],
-    },
+    { title: '奶龙撒花啦', line: '奶龙把花撒给你', frames: pack('flower-') },
+    { title: '奶龙跳舞啦', line: '奶龙自己在跳舞', frames: pack('dance-') },
+    { title: '奶龙欢呼啦', line: '奶龙跳起来欢呼', frames: pack('cheer-') },
+    { title: '奶龙亲亲啦', line: '奶龙送你一个吻', frames: pack('kiss-') },
+    { title: '奶蛋撒花啦', line: '奶蛋把花撒给你', frames: pack('egg-flower-') },
+    { title: '奶蛋跳舞啦', line: '奶蛋自己在跳舞', frames: pack('egg-dance-') },
+    { title: '奶蛋欢呼啦', line: '奶蛋跳起来欢呼', frames: pack('egg-cheer-') },
+    { title: '奶蛋亲亲啦', line: '奶蛋送你一个吻', frames: pack('egg-kiss-') },
   ];
   const scene = scenes[(S.level - 1) % scenes.length];
   const fresh = saved.improved ? '<p class="record">刷新了本关纪录！</p>' : '';
   return '<div class="celebrate">'
-    + '<img class="nailong-act" alt="奶龙" src="' + scene.frames[0] + '" data-frames="' + scene.frames.join('|') + '">'
+    + '<canvas class="nailong-act" width="480" height="640" data-frames="' + scene.frames.join('|') + '"></canvas>'
     + '<p class="scene-line">' + scene.title + ' · ' + scene.line + '</p></div>'
     + '<h1>恭喜过关</h1>'
     + '<p class="stars" aria-label="' + rating.stars + '星">' + starHtml(rating.stars) + '</p>'
@@ -1171,15 +1185,29 @@ function drawGuide() {
   }
 }
 
+function roundRect(x, y, w, h, radius) {
+  const r = Math.min(radius, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 function drawAvatar() {
-  const r = Math.min(24, Math.max(16, radius * 0.8));
-  const orbit = r + 18;
-  const x = orbit + 6;
-  const y = h - orbit - 12;
+  const r = Math.min(22, Math.max(15, radius * 0.7));
+  const x = r + 24;
+  const y = h - r - 46;
   ctx.save();
   ctx.beginPath();
-  ctx.fillStyle = 'rgba(40,80,20,0.12)';
-  ctx.arc(x + 1, y + 3, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(90, 70, 20, 0.12)';
+  ctx.arc(x, y + 3, r + 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y, r + 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#f3d48a';
   ctx.fill();
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -1191,32 +1219,38 @@ function drawAvatar() {
     ctx.fill();
   }
   ctx.restore();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(x, y, r - 0.5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
-  drawBadgeText(x, y, orbit);
+  drawRibbon(x, y + r + 7);
 }
 
-function drawBadgeText(x, y, orbit) {
-  const chars = ['奶', '龙', '出', '品', '必', '属', '精', '品'];
-  const size = Math.max(11, Math.min(14, (orbit - 18) * 0.58));
+function drawRibbon(cx, top) {
+  const line1 = '奶龙出品';
+  const line2 = '必属精品';
   ctx.save();
-  ctx.font = '800 ' + size + 'px PingFang SC, sans-serif';
+  ctx.font = '600 10px PingFang SC, sans-serif';
+  const width = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + 18;
+  const height = 30;
+  const x = cx - width / 2;
+  ctx.shadowColor = 'rgba(120, 80, 20, 0.12)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+  roundRect(x, top, width, height, 9);
+  ctx.fillStyle = 'rgba(255, 250, 242, 0.96)';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = 'rgba(212, 168, 84, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#b8893d';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round';
-  for (let i = 0; i < chars.length; i++) {
-    const ang = -Math.PI / 2 + i * (Math.PI * 2 / chars.length);
-    ctx.save();
-    ctx.translate(x + Math.cos(ang) * orbit, y + Math.sin(ang) * orbit);
-    ctx.lineWidth = 3.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.96)';
-    ctx.strokeText(chars[i], 0, 0);
-    ctx.fillStyle = '#1f5c16';
-    ctx.fillText(chars[i], 0, 0);
-    ctx.restore();
-  }
+  ctx.fillText(line1, cx, top + 10);
+  ctx.fillText(line2, cx, top + 21);
   ctx.restore();
 }
 

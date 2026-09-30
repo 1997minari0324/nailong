@@ -217,7 +217,7 @@ h1 {
 }
 
 .celebrate {
-  height: 236px;
+  height: 250px;
   margin: 0 auto 6px;
   background: #e7f6c9;
   border-radius: 18px;
@@ -229,10 +229,9 @@ h1 {
 }
 
 .nailong-act {
-  width: 168px;
-  height: 200px;
-  object-fit: contain;
-  object-position: center bottom;
+  width: 176px;
+  height: 214px;
+  display: block;
 }
 
 .scene-line {

@@ -2,48 +2,75 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#7ec8ff">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="奶龙弹珠">
-  <title>奶龙弹珠</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23FFC400'/%3E%3Ccircle cx='22' cy='28' r='8' fill='%233dcc4a'/%3E%3Ccircle cx='42' cy='28' r='8' fill='%233dcc4a'/%3E%3Ccircle cx='23' cy='28' r='3.2' fill='%23131'/%3E%3Ccircle cx='43' cy='28' r='3.2' fill='%23131'/%3E%3Cpath d='M22 44q10 9 20 0' stroke='%23c47b00' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <title>奶龙游戏</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Heiti SC", "Noto Sans SC", sans-serif;
+      color: #2c5a14;
+      background: radial-gradient(circle at 50% 0%, #d9f6ff 0%, #7ecbff 42%, #67b83a 100%);
+    }
+    main {
+      width: min(480px, 100%);
+      margin: 0 auto;
+      padding: calc(28px + env(safe-area-inset-top)) 18px 32px;
+    }
+    h1 {
+      margin: 0;
+      text-align: center;
+      font-size: 36px;
+      color: #f0a000;
+      text-shadow: 0 2px 0 #fff1bf;
+    }
+    .lead {
+      text-align: center;
+      font-weight: 700;
+    }
+    .games {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    a.game {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: rgba(255, 255, 255, 0.94);
+      border-radius: 24px;
+      padding: 18px 18px 16px;
+      box-shadow: 0 10px 24px rgba(40, 90, 40, 0.14);
+    }
+    a.game strong {
+      display: block;
+      font-size: 24px;
+      color: #ef9f00;
+    }
+    a.game span {
+      display: block;
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+  </style>
 </head>
 <body>
-  <div id="app">
-    <header>
-      <div class="pill" id="level-pill">准备</div>
-      <div class="pill"><strong id="score">0</strong> 分</div>
-      <div class="pill" id="goal-pill">打掉过关</div>
-      <div class="pill" id="drop-pill">待发射</div>
-      <button id="mute" type="button" aria-label="声音">🔊</button>
-    </header>
-    <div id="board">
-      <canvas id="game"></canvas>
-      <div id="overlay" class="show">
-        <div class="card" id="card">
-          <div class="hero-wrap">
-            <img src="assets/hero.jpg" alt="奶龙">
-          </div>
-          <h1>奶龙弹珠</h1>
-          <p class="lead">按住瞄准，松手把奶龙射上去。三个一样的粘在一起就会掉下来，悬空的也会跟着掉。</p>
-          <p class="note">打掉这一关要求的个数就能过关。关卡越高，奶龙种类越多，顶上压得越快。点右边的小奶龙可以交换。</p>
-          <button class="primary" type="button" data-act="start">开始玩耍</button>
-          <div class="legend">
-            <figure><img src="assets/happy.jpg" alt="" style="box-shadow:0 0 0 3px #FFC400"><figcaption>开心</figcaption></figure>
-            <figure><img src="assets/wow.jpg" alt="" style="box-shadow:0 0 0 3px #1E88E5"><figcaption>惊讶</figcaption></figure>
-            <figure><img src="assets/mad.jpg" alt="" style="box-shadow:0 0 0 3px #FF3B57"><figcaption>生气</figcaption></figure>
-            <figure><img src="assets/egg.jpg" alt="" style="box-shadow:0 0 0 3px #22C55E"><figcaption>奶蛋</figcaption></figure>
-            <figure><img src="assets/wink.jpg" alt="" style="box-shadow:0 0 0 3px #FF7A00"><figcaption>眨眼</figcaption></figure>
-            <figure><img src="assets/sleep.jpg" alt="" style="box-shadow:0 0 0 3px #8E44E8"><figcaption>瞌睡</figcaption></figure>
-          </div>
-          <p class="best" id="best">还没有记录</p>
-        </div>
-      </div>
+  <main>
+    <h1>奶龙游戏</h1>
+    <p class="lead">点一个开始玩</p>
+    <div class="games">
+      <a class="game" href="nailong-marbles/">
+        <strong>奶龙弹珠</strong>
+        <span>把一样的奶龙射到一起，打掉指定个数就能过关。</span>
+      </a>
+      <a class="game" href="nailong-jump/">
+        <strong>奶龙跳一跳</strong>
+        <span>按住蓄力，松手起跳。跳到中心分数更高。</span>
+      </a>
     </div>
-  </div>
-  <div id="turn">请把手机竖过来玩</div>
-  <script src="game.js"></script>
+  </main>
 </body>
 </html>

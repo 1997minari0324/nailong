@@ -54,6 +54,12 @@ header {
   color: #b41334;
 }
 
+@media (max-width: 420px) {
+  header { gap: 5px; padding-left: 8px; padding-right: 8px; }
+  .pill { font-size: 12px; padding: 7px 4px; }
+  .pill strong { font-size: 14px; }
+}
+
 #mute {
   flex: 0 0 42px;
   width: 42px;

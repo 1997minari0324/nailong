@@ -28,6 +28,9 @@ const S = {
   current: 0,
   next: 1,
   untilDrop: 9,
+  shotEvery: 10,
+  cleared: 0,
+  goal: 10,
   angle: -Math.PI / 2,
   pressing: false,
   cancel: false,
@@ -67,6 +70,7 @@ const card = document.getElementById('card');
 const scoreEl = document.getElementById('score');
 const levelEl = document.getElementById('level-pill');
 const dropEl = document.getElementById('drop-pill');
+const goalEl = document.getElementById('goal-pill');
 const muteBtn = document.getElementById('mute');
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -244,10 +248,25 @@ function scrubMatches() {
   }
 }
 
-function rowsFor(level) {
-  const desired = Math.min(8, 4 + level);
+function levelPlan(level) {
+  return {
+    types: Math.min(TYPES.length, 2 + level),
+    rowsWanted: Math.min(8, 4 + Math.floor((level - 1) / 2)),
+    goal: 10 + (level - 1) * 4,
+    shots: Math.max(5, 11 - level),
+  };
+}
+
+function rowsFor(wanted) {
   const fit = Math.floor((limitCenterY() - radius) / rowH()) - 1;
-  return Math.min(desired, Math.max(2, fit));
+  return Math.min(wanted, Math.max(2, fit));
+}
+
+function unlockName(level) {
+  const prev = Math.min(TYPES.length, 2 + (level - 1));
+  const now = Math.min(TYPES.length, 2 + level);
+  if (now > prev && now > 0) return TYPES[now - 1].name;
+  return '';
 }
 
 function trimLow() {
@@ -259,10 +278,6 @@ function trimLow() {
       if (b.r === maxR) S.grid.delete(key(b.r, b.c));
     }
   }
-}
-
-function dropsFor(level) {
-  return Math.max(6, 10 - level);
 }
 
 function buildGrid(rows) {
@@ -304,13 +319,17 @@ function begin(level, score) {
   S.dropOffset = 0;
   S.lock = 0;
   S.loseIn = 0;
-  S.banner = 1.15;
-  S.bannerText = '第 ' + level + ' 关';
+  S.banner = 1.7;
   S.load = 1;
-  S.typeCount = Math.min(TYPES.length, 4 + Math.min(level, 2));
-  S.untilDrop = dropsFor(level);
+  const plan = levelPlan(level);
+  S.typeCount = plan.types;
+  S.shotEvery = plan.shots;
+  S.untilDrop = plan.shots;
+  S.cleared = 0;
   if (level === 1 && score === 0) S.didShoot = false;
-  buildGrid(rowsFor(level));
+  buildGrid(rowsFor(plan.rowsWanted));
+  S.goal = Math.min(plan.goal, Math.max(8, S.grid.size - 6));
+  S.bannerText = '第' + level + '关  打掉' + S.goal + '个';
   S.current = rollType();
   S.next = rollType();
   previewKey = '';
@@ -355,9 +374,13 @@ function finishLose() {
 
 function showEnd(win, bonus) {
   const record = newRecord ? '<p class="record">新纪录！</p>' : '';
+  const nextStyle = unlockName(S.level + 1);
+  const nextHint = nextStyle
+    ? '下一关会多出「' + nextStyle + '」'
+    : '下一关种类不变，但会更挤，顶上也压得更快';
   card.innerHTML = win
-    ? '<h1>清空啦</h1><p class="end-copy">这一关的奶龙都掉光了</p><p class="score-lg">' + S.score + ' 分</p><p class="note">过关奖励 +' + bonus + '</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="next">下一关</button><button class="ghost" type="button" data-act="menu">回首页</button></div>'
-    : '<h1>挤到下面了</h1><p class="end-copy">奶龙堆得太低啦，再来一次</p><p class="score-lg">' + S.score + ' 分</p><p class="note">最高 ' + S.best + ' 分</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="retry">再试一次</button><button class="ghost" type="button" data-act="menu">回首页</button></div>';
+    ? '<h1>过关啦</h1><p class="end-copy">打掉 ' + S.cleared + ' 个，第 ' + S.level + ' 关通过</p><p class="score-lg">' + S.score + ' 分</p><p class="note">过关奖励 +' + bonus + '。' + nextHint + '</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="next">下一关</button><button class="ghost" type="button" data-act="menu">回首页</button></div>'
+    : '<h1>挤到下面了</h1><p class="end-copy">还差 ' + Math.max(0, S.goal - S.cleared) + ' 个就过关了</p><p class="score-lg">' + S.score + ' 分</p><p class="note">最高 ' + S.best + ' 分</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="retry">再试一次</button><button class="ghost" type="button" data-act="menu">回首页</button></div>';
   overlay.classList.add('show');
   syncHud();
 }
@@ -406,6 +429,7 @@ function burst(x, y, type, n) {
 }
 
 function detach(list, delay) {
+  let removed = 0;
   for (const item of list) {
     const b = Array.isArray(item) ? S.grid.get(key(item[0], item[1])) : item;
     if (!b || !S.grid.has(key(b.r, b.c))) continue;
@@ -421,9 +445,11 @@ function detach(list, delay) {
       delay,
     });
     S.grid.delete(key(b.r, b.c));
+    removed += 1;
     if (S.particles.length < 140) burst(p.x, p.y, b.type, 6);
   }
-  S.rev++;
+  if (removed) S.rev++;
+  return removed;
 }
 
 function resolve(r, c) {
@@ -440,9 +466,10 @@ function resolve(r, c) {
     sx /= group.length;
     sy /= group.length;
     const looseBefore = group.length;
-    detach(group, 0);
+    const popped = detach(group, 0);
     const loose = orphans();
-    detach(loose, 0.07);
+    const dropped = detach(loose, 0.07);
+    S.cleared += popped + dropped;
     const gained = looseBefore * 100 * S.combo + loose.length * 120 * S.combo;
     S.score += gained;
     rememberBest();
@@ -458,7 +485,7 @@ function resolve(r, c) {
     tone(210, 0.05, 'sine', 0.03);
   }
 
-  if (S.grid.size === 0) {
+  if (S.cleared >= S.goal || S.grid.size === 0) {
     onWin();
     return;
   }
@@ -469,7 +496,7 @@ function resolve(r, c) {
   S.untilDrop -= 1;
   if (S.untilDrop <= 0) {
     pushDown();
-    S.untilDrop = dropsFor(S.level);
+    S.untilDrop = S.shotEvery;
     if (tooLow()) onLoseSoon();
   }
 }
@@ -816,10 +843,13 @@ function update(dt) {
 function syncHud() {
   if (S.mode === 'menu') {
     levelEl.textContent = '奶龙';
+    goalEl.textContent = '打掉过关';
     dropEl.textContent = S.best ? '最高 ' + S.best : '待发射';
     dropEl.classList.remove('warn');
   } else {
+    const left = Math.max(0, S.goal - S.cleared);
     levelEl.textContent = '第 ' + S.level + ' 关';
+    goalEl.textContent = left === 0 ? '过关' : '还差 ' + left;
     dropEl.textContent = S.untilDrop + ' 发后下压';
     dropEl.classList.toggle('warn', S.mode === 'playing' && S.untilDrop <= 2);
   }
@@ -1041,9 +1071,10 @@ function drawGuide() {
 }
 
 function drawAvatar() {
-  const r = Math.min(26, Math.max(18, radius * 0.95));
-  const x = r + 12;
-  const y = h - r - 14;
+  const r = Math.min(24, Math.max(16, radius * 0.8));
+  const orbit = r + 18;
+  const x = orbit + 6;
+  const y = h - orbit - 12;
   ctx.save();
   ctx.beginPath();
   ctx.fillStyle = 'rgba(40,80,20,0.12)';
@@ -1062,6 +1093,29 @@ function drawAvatar() {
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#fff';
   ctx.stroke();
+  ctx.restore();
+  drawBadgeText(x, y, orbit);
+}
+
+function drawBadgeText(x, y, orbit) {
+  const chars = ['奶', '龙', '出', '品', '必', '属', '精', '品'];
+  const size = Math.max(11, Math.min(14, (orbit - 18) * 0.58));
+  ctx.save();
+  ctx.font = '800 ' + size + 'px PingFang SC, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < chars.length; i++) {
+    const ang = -Math.PI / 2 + i * (Math.PI * 2 / chars.length);
+    ctx.save();
+    ctx.translate(x + Math.cos(ang) * orbit, y + Math.sin(ang) * orbit);
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.96)';
+    ctx.strokeText(chars[i], 0, 0);
+    ctx.fillStyle = '#1f5c16';
+    ctx.fillText(chars[i], 0, 0);
+    ctx.restore();
+  }
   ctx.restore();
 }
 

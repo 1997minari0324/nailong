@@ -59,6 +59,7 @@ const S = {
 
 let newRecord = false;
 let menuHTML = '';
+let sceneTimer = 0;
 let w = 0;
 let h = 0;
 let radius = 20;
@@ -343,7 +344,34 @@ function rememberBest() {
   }
 }
 
+function stopScene() {
+  if (sceneTimer) {
+    clearInterval(sceneTimer);
+    sceneTimer = 0;
+  }
+}
+
+function startScene() {
+  stopScene();
+  const img = card.querySelector('.nailong-act');
+  if (!img) return;
+  const frames = (img.dataset.frames || '').split('|').filter(Boolean);
+  if (!frames.length) return;
+  frames.forEach((src) => {
+    const pre = new Image();
+    pre.src = src;
+  });
+  img.src = frames[0];
+  if (reduceMotion || frames.length < 2) return;
+  let i = 0;
+  sceneTimer = setInterval(() => {
+    i = (i + 1) % frames.length;
+    img.src = frames[i];
+  }, 260);
+}
+
 function begin(level, score) {
+  stopScene();
   resize();
   newRecord = false;
   S.mode = 'playing';
@@ -384,6 +412,7 @@ function begin(level, score) {
 }
 
 function showMenu() {
+  stopScene();
   S.mode = 'menu';
   S.shot = null;
   card.innerHTML = menuHTML;
@@ -402,7 +431,6 @@ function onWin() {
   const saved = saveLevelResult(S.level, rating.stars, rating.levelScore);
   rememberBest();
   sfxWin();
-  confetti(rating.stars);
   showEnd(true, bonus, rating, saved);
 }
 
@@ -429,24 +457,36 @@ function showEnd(win, bonus, rating, saved) {
   card.innerHTML = win
     ? winCard(bonus, rating, saved, nextHint)
     : '<h1>挤到下面了</h1><p class="end-copy">还差 ' + Math.max(0, S.goal - S.cleared) + ' 个就过关了</p><p class="score-lg">' + S.score + ' 分</p><p class="note">最高 ' + S.best + ' 分</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="retry">再试一次</button><button class="ghost" type="button" data-act="menu">回首页</button></div>';
+  if (win) startScene();
   overlay.classList.add('show');
   syncHud();
 }
 
 function winCard(bonus, rating, saved, nextHint) {
   const scenes = [
-    { id: 'flower', title: '奶龙撒花啦', face: 'assets/happy.jpg', line: '花花送给你' },
-    { id: 'dance', title: '奶龙跳舞啦', face: 'assets/wink.jpg', line: '跟着节拍晃一晃' },
-    { id: 'cheer', title: '奶龙欢呼啦', face: 'assets/wow.jpg', line: '跳起来恭喜你' },
+    {
+      id: 'flower',
+      title: '奶龙撒花啦',
+      line: '奶龙把花撒给你',
+      frames: ['assets/act-flower-1.jpg', 'assets/act-flower-2.jpg', 'assets/act-flower-3.jpg', 'assets/act-flower-4.jpg'],
+    },
+    {
+      id: 'dance',
+      title: '奶龙跳舞啦',
+      line: '奶龙自己在跳舞',
+      frames: ['assets/act-dance-1.jpg', 'assets/act-dance-2.jpg', 'assets/act-dance-4.jpg', 'assets/act-dance-3.jpg'],
+    },
+    {
+      id: 'cheer',
+      title: '奶龙欢呼啦',
+      line: '奶龙跳起来欢呼',
+      frames: ['assets/act-cheer-1.jpg', 'assets/act-cheer-2.jpg', 'assets/act-cheer-3.jpg', 'assets/act-cheer-4.jpg'],
+    },
   ];
   const scene = scenes[(S.level - 1) % scenes.length];
-  const motion = reduceMotion ? ' still' : '';
-  let petals = '';
-  const petalCount = rating.stars >= 3 ? 12 : 8;
-  for (let i = 0; i < petalCount; i++) petals += '<i class="petal"></i>';
   const fresh = saved.improved ? '<p class="record">刷新了本关纪录！</p>' : '';
-  return '<div class="celebrate scene-' + scene.id + ' star-' + rating.stars + motion + '">' + petals
-    + '<img class="nailong-pop" src="' + scene.face + '" alt="奶龙">'
+  return '<div class="celebrate">'
+    + '<img class="nailong-act" alt="奶龙" src="' + scene.frames[0] + '" data-frames="' + scene.frames.join('|') + '">'
     + '<p class="scene-line">' + scene.title + ' · ' + scene.line + '</p></div>'
     + '<h1>恭喜过关</h1>'
     + '<p class="stars" aria-label="' + rating.stars + '星">' + starHtml(rating.stars) + '</p>'
@@ -847,25 +887,6 @@ function toggleMute() {
   if (!S.mute) {
     unlockAudio();
     tone(660, 0.06, 'sine', 0.03);
-  }
-}
-
-function confetti(stars) {
-  if (!w) return;
-  const count = stars >= 3 ? 70 : stars === 2 ? 46 : 28;
-  for (let i = 0; i < count; i++) {
-    S.particles.push({
-      x: Math.random() * w,
-      y: -20 - Math.random() * 80,
-      vx: (Math.random() - 0.5) * 90,
-      vy: 70 + Math.random() * 140,
-      life: 1.5 + Math.random() * 0.5,
-      color: TYPES[i % TYPES.length].color,
-      size: 4 + Math.random() * 3,
-      confetti: true,
-      rot: Math.random() * 6,
-      vr: (Math.random() - 0.5) * 8,
-    });
   }
 }
 

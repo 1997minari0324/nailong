@@ -38,13 +38,21 @@
     }
     a.game {
       display: block;
+      overflow: hidden;
       text-decoration: none;
       color: inherit;
-      background: rgba(255, 255, 255, 0.94);
+      background: #fff;
       border-radius: 24px;
-      padding: 18px 18px 16px;
       box-shadow: 0 10px 24px rgba(40, 90, 40, 0.14);
     }
+    .shot {
+      height: 176px;
+      background-color: #e7f6c9;
+      background-size: cover;
+      background-position: center 30%;
+    }
+    .marbles .shot { background-position: center 16%; }
+    .copy { padding: 14px 16px 16px; }
     a.game strong {
       display: block;
       font-size: 24px;
@@ -62,13 +70,19 @@
     <h1>奶龙游戏</h1>
     <p class="lead">点一个开始玩</p>
     <div class="games">
-      <a class="game" href="nailong-marbles/">
-        <strong>奶龙弹珠</strong>
-        <span>把一样的奶龙射到一起，打掉指定个数就能过关。</span>
+      <a class="game marbles" href="nailong-marbles/">
+        <div class="shot" style="background-image:url('nailong-marbles/assets/hero.jpg')"></div>
+        <div class="copy">
+          <strong>奶龙弹珠</strong>
+          <span>把一样的奶龙射到一起，打掉指定个数就能过关。</span>
+        </div>
       </a>
-      <a class="game" href="nailong-jump/">
-        <strong>奶龙跳一跳</strong>
-        <span>按住蓄力，松手起跳。跳到中心分数更高。</span>
+      <a class="game jump" href="nailong-jump/">
+        <div class="shot" style="background-image:url('nailong-marbles/assets/act-cheer-2.jpg')"></div>
+        <div class="copy">
+          <strong>奶龙跳一跳</strong>
+          <span>按住蓄力，松手起跳。跳到中心分数更高。</span>
+        </div>
       </a>
     </div>
   </main>

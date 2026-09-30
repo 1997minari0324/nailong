@@ -124,10 +124,14 @@ function nextDistance() {
 function makePlatform(x, y, side, starter) {
   const hard = !starter && score >= 6 && Math.random() < Math.min(0.42, 0.08 + score / 90);
   const moving = !starter && score >= 10 && Math.random() < Math.min(0.38, (score - 8) / 80);
+  const shapes = ['cube', 'wide', 'long', 'trap'];
+  const shape = starter ? 'wide' : shapes[(Math.random() * shapes.length) | 0];
+  let r = starter ? 48 : shape === 'wide' ? 54 : shape === 'long' ? 36 : shape === 'trap' ? 32 : 42;
+  if (hard) r = Math.max(26, r * 0.7);
   return {
-    x, y, side,
-    r: starter ? 52 : hard ? 28 + Math.random() * 6 : 40 + Math.random() * 10,
-    h: starter ? 56 : 42 + Math.random() * 34,
+    x, y, side, shape,
+    r,
+    h: starter ? 62 : shape === 'long' ? 78 + Math.random() * 16 : 52 + Math.random() * 24,
     skin: (Math.random() * SKINS.length) | 0,
     moveAmp: moving ? 20 + Math.random() * 22 : 0,
     moveSpeed: 1.15 + Math.random() * 1.3,
@@ -364,44 +368,103 @@ function drawBackground() {
   });
 }
 
+function fillPoly(points, color) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function strokePoly(points) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function drawImageCover(img, x, y, width, height) {
+  const ir = img.naturalWidth / img.naturalHeight;
+  const box = width / height;
+  let dw = width;
+  let dh = height;
+  let dx = x;
+  let dy = y;
+  if (ir > box) {
+    dw = height * ir;
+    dx = x - (dw - width) / 2;
+  } else {
+    dh = width / ir;
+    dy = y - (dh - height) / 2;
+  }
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
 function drawPlatform(p) {
   const pos = worldPos(p);
-  const top = project(pos.x, pos.y, 0);
-  const rx = p.r;
-  const ry = p.r * 0.46;
+  const c = project(pos.x, pos.y, 0);
   const skin = SKINS[p.skin];
+  const half = p.r;
+  const topW = p.shape === 'trap' ? half * 0.78 : half;
+  const botW = p.shape === 'trap' ? half * 1.16 : half;
+  const depth = p.shape === 'long' ? 28 : p.shape === 'wide' ? 18 : 22;
+  const side = p.shape === 'long' ? 22 : 16;
+  const yFront = c.y + depth * 0.45;
+  const yBack = c.y - depth * 0.55;
+  const yBot = yFront + p.h;
+  const ox = -side / 2;
+  const front = [
+    [c.x + ox - botW, yBot],
+    [c.x + ox + botW, yBot],
+    [c.x + ox + topW, yFront],
+    [c.x + ox - topW, yFront],
+  ];
+  const cap = [
+    [c.x + ox - topW, yFront],
+    [c.x + ox + topW, yFront],
+    [c.x + ox + topW + side, yBack],
+    [c.x + ox - topW + side, yBack],
+  ];
+  const wall = [
+    front[1],
+    [front[1][0] + side, yBot - (yFront - yBack)],
+    cap[2],
+    front[2],
+  ];
   ctx.beginPath();
-  ctx.ellipse(top.x + 8, top.y + p.h + 8, rx * 0.86, ry * 0.62, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(40, 80, 20, 0.14)';
+  ctx.ellipse(c.x + 4, yBot + 10, botW * 0.92, 12, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(40, 80, 20, 0.16)';
   ctx.fill();
-  ctx.fillStyle = skin.body;
-  ctx.fillRect(top.x - rx, top.y, rx * 2, p.h);
-  ctx.fillStyle = 'rgba(0,0,0,0.08)';
-  ctx.fillRect(top.x - rx, top.y, rx * 2, p.h);
-  ctx.beginPath();
-  ctx.ellipse(top.x, top.y + p.h, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = skin.body;
-  ctx.fill();
+  fillPoly(wall, 'rgba(0,0,0,0.18)');
   ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(top.x, top.y, rx * 0.96, ry * 0.96, 0, 0, Math.PI * 2);
+  ctx.fillStyle = skin.body;
+  fillPoly(front, skin.body);
   ctx.clip();
   const img = images[skin.id];
-  if (img.complete && img.naturalWidth) {
-    ctx.drawImage(img, top.x - rx, top.y - rx * 0.92, rx * 2, rx * 1.7);
-  } else {
-    ctx.fillStyle = skin.belly;
-    ctx.fillRect(top.x - rx, top.y - ry, rx * 2, ry * 2);
+  const faceX = c.x + ox - botW + 7;
+  const faceW = botW * 2 - 14;
+  const faceH = p.h - 10;
+  if (img.complete && img.naturalWidth && faceW > 8 && faceH > 8) {
+    drawImageCover(img, faceX, yFront + 5, faceW, faceH);
   }
   ctx.restore();
-  ctx.beginPath();
-  ctx.ellipse(top.x, top.y, rx * 0.96, ry * 0.96, 0, 0, Math.PI * 2);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+  ctx.lineWidth = 2;
+  strokePoly(front);
+  ctx.restore();
+  fillPoly(cap, skin.belly);
+  fillPoly(cap, 'rgba(255,255,255,0.35)');
+  ctx.save();
   ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  ctx.lineWidth = 2;
+  strokePoly(cap);
+  ctx.restore();
   ctx.beginPath();
-  ctx.ellipse(top.x, top.y, rx * 0.3, ry * 0.3, 0, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.ellipse(c.x, c.y, Math.max(6, topW * 0.22), 5, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
   ctx.lineWidth = 2;
   ctx.stroke();
 }

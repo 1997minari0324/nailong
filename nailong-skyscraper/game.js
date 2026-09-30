@@ -167,13 +167,13 @@ function floorTop(index) {
 
 function swingOmega() {
   const n = builtFloors();
-  if (n < 2) return 0.82;
-  return Math.min(2.45, 0.92 + n * 0.026);
+  if (n < 4) return 0.7;
+  return Math.min(1.65, 0.74 + n * 0.011);
 }
 
 function swingAmp() {
   const n = builtFloors();
-  return Math.min(1.02, 0.58 + n * 0.0045);
+  return Math.min(0.82, 0.5 + n * 0.0022);
 }
 
 function cableLen() {
@@ -265,7 +265,7 @@ function showMenu() {
   phase = 'swing';
   card.innerHTML = '<h1>奶龙摩天楼</h1>'
     + '<p class="lead">方块里装着奶龙。它会左右摆，点一下放下来，叠到下面那块的正上方。</p>'
-    + '<p class="note">有的是正方块，有的是长方块。叠歪了，多出来的一截会掉下去。连续叠正，入住的人会更多。</p>'
+    + '<p class="note">有的是正方块，有的是长方块。稍微歪一点也没关系，只要还搭在楼上就不会倒。叠得很正时，入住的人会更多。</p>'
     + '<button class="primary" type="button" data-act="start">开始盖楼</button>'
     + '<p class="note">最高入住 ' + best.people + ' 人 · 最高 ' + best.floors + ' 层</p>'
     + '<a class="ghost" href="../">返回</a>';
@@ -397,36 +397,29 @@ function landPiece() {
   const left = Math.max(a1, b1);
   const right = Math.min(a2, b2);
   const overlap = right - left;
-  const minKeep = Math.max(18, top.width * 0.14);
+  const minKeep = Math.max(16, top.width * 0.07);
   if (overlap < minKeep) {
     failPiece();
     return;
   }
   const offset = Math.abs((a1 + a2) / 2 - top.center);
-  const perfect = offset <= Math.max(7, top.width * 0.05);
-  if (!perfect) {
+  const perfect = offset <= Math.max(10, top.width * 0.08);
+  const steady = offset <= Math.max(36, top.width * 0.28);
+  if (!steady) {
     if (a1 < b1 - 1) spawnDebris(a1, roofY - FLOOR_H, b1 - a1, -1, piece.seed);
     if (a2 > b2 + 1) spawnDebris(b2, roofY - FLOOR_H, a2 - b2, 1, piece.seed);
   }
-  let kept = perfect ? top.cells : Math.floor((overlap / top.width) * top.cells + 0.22);
-  kept = Math.max(0, Math.min(top.cells, kept));
+  let kept = steady ? top.cells : Math.round((overlap / top.width) * top.cells + 0.55);
+  kept = Math.max(1, Math.min(top.cells, kept));
   let form = kept <= 1 ? 'cubes' : (piece.form || 'cubes');
   let width = widthFor(kept, form);
-  if (!perfect && width > overlap + 2) {
+  if (!steady && width > overlap * 1.65 && kept > 1) {
     kept -= 1;
-    if (kept < 1) {
-      failPiece();
-      return;
-    }
     form = kept <= 1 ? 'cubes' : form;
     width = widthFor(kept, form);
   }
-  if (kept < 1) {
-    failPiece();
-    return;
-  }
-  let center = perfect ? top.center : (left + right) / 2;
-  if (!perfect) {
+  let center = steady ? top.center : (left + right) / 2;
+  if (!steady) {
     const half = width / 2;
     if (center - half < left) center = left + half;
     if (center + half > right) center = right - half;

@@ -265,7 +265,7 @@ function showMenu() {
   phase = 'swing';
   card.innerHTML = '<h1>奶龙摩天楼</h1>'
     + '<p class="lead">方块里装着奶龙。它会左右摆，点一下放下来，叠到下面那块的正上方。</p>'
-    + '<p class="note">有的是正方块，有的是长方块。没对准就停在落下的位置，不会自动挪正。只有完全没搭上才会倒。</p>'
+    + '<p class="note">有的是正方块，有的是长方块。没对准也会整块留在落下的位置，多出去的部分不会被切掉。只有完全没搭上才会倒。</p>'
     + '<button class="primary" type="button" data-act="start">开始盖楼</button>'
     + '<p class="note">最高入住 ' + best.people + ' 人 · 最高 ' + best.floors + ' 层</p>'
     + '<a class="ghost" href="../">返回</a>';
@@ -405,27 +405,17 @@ function landPiece() {
   const dropCenter = (a1 + a2) / 2;
   const offset = Math.abs(dropCenter - top.center);
   const perfect = offset <= Math.max(8, top.width * 0.045);
-  if (!perfect) {
-    if (a1 < b1 - 1) spawnDebris(a1, roofY - FLOOR_H, b1 - a1, -1, piece.seed);
-    if (a2 > b2 + 1) spawnDebris(b2, roofY - FLOOR_H, a2 - b2, 1, piece.seed);
-  }
-  const kept = perfect
-    ? top.cells
-    : Math.max(1, Math.min(top.cells, Math.round((overlap / top.width) * top.cells)));
-  const form = kept <= 1 ? 'cubes' : (piece.form || 'cubes');
-  const width = perfect ? piece.width : overlap;
-  const center = perfect ? dropCenter : (left + right) / 2;
   floors.push({
-    center,
-    width,
-    cells: kept,
-    form,
+    center: dropCenter,
+    width: piece.width,
+    cells: piece.cells,
+    form: piece.form || 'cubes',
     seed: piece.seed,
     flash: perfect ? 0.55 : 0.18,
   });
   hangForm = Math.random() < 0.48 ? 'box' : 'cubes';
-  spawnDust(center, roofY, width);
-  award(perfect, center, roofY - FLOOR_H - 8);
+  spawnDust(dropCenter, roofY, piece.width);
+  award(perfect, dropCenter, roofY - FLOOR_H - 8);
   milestone(builtFloors());
   shake = perfect ? 3.5 : 7;
   piece = null;

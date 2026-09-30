@@ -59,7 +59,8 @@ let platforms = [];
 let jump = null;
 let fallT = 0;
 let player = { x: 0, y: 0, lift: 0 };
-let camera = { x: 0, y: 0 };
+let camera = { x: 0, y: 0, scale: 1 };
+const LOOK_AHEAD = 4;
 let floaters = [];
 let puffs = [];
 let didJump = false;
@@ -222,7 +223,33 @@ function addPlatform(starter) {
 }
 
 function ensureAhead() {
-  while (platforms.length < current + 6) addPlatform(false);
+  while (platforms.length < current + LOOK_AHEAD + 2) addPlatform(false);
+}
+
+function lookTarget() {
+  const from = current;
+  const to = Math.min(platforms.length - 1, current + LOOK_AHEAD);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = from; i <= to; i++) {
+    const p = platforms[i];
+    if (!p) continue;
+    minX = Math.min(minX, p.x - p.hx - 28);
+    maxX = Math.max(maxX, p.x + p.hx + 40);
+    minY = Math.min(minY, p.y - p.hy - 48);
+    maxY = Math.max(maxY, p.y + p.hy + 24);
+  }
+  if (!isFinite(minX)) return { x: player.x, y: player.y, scale: 1 };
+  const spanX = Math.max(140, maxX - minX);
+  const spanY = Math.max(140, maxY - minY);
+  const scale = Math.max(0.56, Math.min(1, (w - 36) / spanX, (h * 0.68) / spanY));
+  return {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+    scale,
+  };
 }
 
 function startGame() {
@@ -244,8 +271,10 @@ function startGame() {
   player.x = origin.x;
   player.y = origin.y;
   player.lift = 0;
-  camera.x = platforms[1] ? (platforms[0].x + platforms[1].x) / 2 : 0;
-  camera.y = platforms[1] ? (platforms[0].y + platforms[1].y) / 2 : 0;
+  const view = lookTarget();
+  camera.x = view.x;
+  camera.y = view.y;
+  camera.scale = view.scale;
   mode = 'ready';
   overlay.classList.remove('show');
   syncHud();
@@ -403,12 +432,10 @@ function update(dt) {
   }
 
   if (mode === 'ready' || mode === 'charge' || mode === 'jump' || mode === 'fall') {
-    const here = platforms[current];
-    const ahead = platforms[Math.min(platforms.length - 1, current + (mode === 'fall' ? 0 : 1))];
-    const focusX = here && ahead ? (here.x + ahead.x) / 2 : player.x;
-    const focusY = here && ahead ? (here.y + ahead.y) / 2 : player.y;
-    camera.x += (focusX - camera.x) * Math.min(1, dt * 6);
-    camera.y += (focusY - camera.y) * Math.min(1, dt * 6);
+    const view = lookTarget();
+    camera.x += (view.x - camera.x) * Math.min(1, dt * 5);
+    camera.y += (view.y - camera.y) * Math.min(1, dt * 5);
+    camera.scale += (view.scale - camera.scale) * Math.min(1, dt * 5);
   }
 
   floaters.forEach((item) => {
@@ -628,20 +655,22 @@ function drawFloaters() {
 }
 
 function drawRoute() {
-  const here = platforms[current];
-  const next = platforms[current + 1];
-  if (!here || !next || mode === 'fall' || mode === 'over') return;
-  const a = project(here.x, here.y, 0);
-  const b = project(next.x, next.y, 0);
+  if (mode === 'fall' || mode === 'over') return;
+  const end = Math.min(platforms.length - 1, current + LOOK_AHEAD);
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
   ctx.setLineDash([6, 8]);
-  ctx.lineWidth = 3;
   ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x, b.y);
-  ctx.stroke();
+  for (let i = current; i < end; i++) {
+    const a = project(platforms[i].x, platforms[i].y, 0);
+    const b = project(platforms[i + 1].x, platforms[i + 1].y, 0);
+    const soon = i === current;
+    ctx.strokeStyle = soon ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = soon ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -678,12 +707,20 @@ function render() {
   if (mode !== 'pick') {
     const order = platforms.map((p, index) => ({ p, index }));
     order.sort((a, b) => b.p.y - a.p.y);
+    ctx.save();
+    const anchorX = w / 2;
+    const anchorY = h * 0.72;
+    const viewScale = camera.scale || 1;
+    ctx.translate(anchorX, anchorY);
+    ctx.scale(viewScale, viewScale);
+    ctx.translate(-anchorX, -anchorY);
     drawRoute();
     order.forEach((item) => {
-      if (item.index >= current - 1 && item.index <= current + 1) drawPlatform(item.p);
+      if (item.index >= current - 1 && item.index <= current + LOOK_AHEAD) drawPlatform(item.p);
     });
     if (mode !== 'over') drawJumper();
     drawFloaters();
+    ctx.restore();
     drawHint();
   }
 }

@@ -171,6 +171,18 @@ h1 {
   box-shadow: 0 2px 0 #e09a00;
 }
 
+.primary.alt {
+  margin-top: 10px;
+  color: #0d4f7a;
+  background: linear-gradient(#7fd7ff, #2ea8e8);
+  box-shadow: 0 5px 0 #1c86bf;
+}
+
+.primary.alt:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #1c86bf;
+}
+
 .ghost {
   margin-top: 8px;
   padding: 8px 16px;

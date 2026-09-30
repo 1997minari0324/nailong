@@ -18,6 +18,7 @@ const TYPES = [
 
 const S = {
   mode: 'menu',
+  endless: false,
   level: 1,
   score: 0,
   scoreBase: 0,
@@ -393,11 +394,12 @@ function startScene() {
   sceneTimer = setInterval(step, 32);
 }
 
-function begin(level, score) {
+function begin(level, score, endless) {
   stopScene();
   resize();
   newRecord = false;
   S.mode = 'playing';
+  S.endless = !!endless;
   S.level = level;
   S.score = score;
   S.scoreBase = score;
@@ -416,17 +418,26 @@ function begin(level, score) {
   S.loseIn = 0;
   S.banner = 1.7;
   S.load = 1;
-  const plan = levelPlan(level);
-  S.typeCount = plan.types;
-  S.shotEvery = plan.shots;
-  S.untilDrop = plan.shots;
   S.cleared = 0;
   S.shotsUsed = 0;
   S.pressureCount = 0;
   if (level === 1 && score === 0) S.didShoot = false;
-  buildGrid(rowsFor(plan.rowsWanted));
-  S.goal = Math.min(plan.goal, Math.max(8, S.grid.size - 6));
-  S.bannerText = '第' + level + '关  打掉' + S.goal + '个';
+  if (endless) {
+    S.typeCount = 3;
+    S.shotEvery = 10;
+    S.untilDrop = 10;
+    S.goal = 0;
+    buildGrid(rowsFor(4));
+    S.bannerText = '无限模式  一直玩到碰到虚线';
+  } else {
+    const plan = levelPlan(level);
+    S.typeCount = plan.types;
+    S.shotEvery = plan.shots;
+    S.untilDrop = plan.shots;
+    buildGrid(rowsFor(plan.rowsWanted));
+    S.goal = Math.min(plan.goal, Math.max(8, S.grid.size - 6));
+    S.bannerText = '第' + level + '关  打掉' + S.goal + '个';
+  }
   S.current = rollType();
   S.next = rollType();
   previewKey = '';
@@ -477,9 +488,10 @@ function showEnd(win, bonus, rating, saved) {
   const nextHint = nextStyle
     ? '下一关会多出「' + nextStyle + '」'
     : '下一关种类不变，但会更挤，顶上也压得更快';
-  card.innerHTML = win
-    ? winCard(bonus, rating, saved, nextHint)
+  const loseCard = S.endless
+    ? '<h1>碰到虚线啦</h1><p class="end-copy">一共消了 ' + S.cleared + ' 个 · 撑了 ' + S.shotsUsed + ' 发</p><p class="score-lg">' + S.score + ' 分</p><p class="note">最高 ' + S.best + ' 分</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="retry">再来一局</button><button class="ghost" type="button" data-act="menu">回首页</button></div>'
     : '<h1>挤到下面了</h1><p class="end-copy">还差 ' + Math.max(0, S.goal - S.cleared) + ' 个就过关了</p><p class="score-lg">' + S.score + ' 分</p><p class="note">最高 ' + S.best + ' 分</p>' + record + '<div class="actions"><button class="primary" type="button" data-act="retry">再试一次</button><button class="ghost" type="button" data-act="menu">回首页</button></div>';
+  card.innerHTML = win ? winCard(bonus, rating, saved, nextHint) : loseCard;
   if (win) startScene();
   overlay.classList.add('show');
   syncHud();
@@ -617,7 +629,10 @@ function resolve(r, c) {
     tone(210, 0.05, 'sine', 0.03);
   }
 
-  if (S.cleared >= S.goal || S.grid.size === 0) {
+  if (S.endless) {
+    S.typeCount = Math.min(TYPES.length, 3 + Math.floor(S.cleared / 14));
+  }
+  if (!S.endless && (S.cleared >= S.goal || S.grid.size === 0)) {
     onWin();
     return;
   }
@@ -958,9 +973,14 @@ function update(dt) {
 function syncHud() {
   if (S.mode === 'menu') {
     levelEl.textContent = '奶龙';
-    goalEl.textContent = '打掉过关';
+    goalEl.textContent = '选个模式';
     dropEl.textContent = S.best ? '最高 ' + S.best : '待发射';
     dropEl.classList.remove('warn');
+  } else if (S.endless) {
+    levelEl.textContent = '无限';
+    goalEl.textContent = '已消 ' + S.cleared;
+    dropEl.textContent = S.untilDrop + ' 发后下压';
+    dropEl.classList.toggle('warn', S.mode === 'playing' && S.untilDrop <= 2);
   } else {
     const left = Math.max(0, S.goal - S.cleared);
     levelEl.textContent = '第 ' + S.level + ' 关';
@@ -1411,9 +1431,10 @@ function bind() {
     if (!btn) return;
     unlockAudio();
     const act = btn.dataset.act;
-    if (act === 'start') begin(1, 0);
-    else if (act === 'next') begin(S.level + 1, S.score);
-    else if (act === 'retry') begin(S.level, S.scoreBase);
+    if (act === 'start-level') begin(1, 0, false);
+    else if (act === 'start-endless') begin(1, 0, true);
+    else if (act === 'next') begin(S.level + 1, S.score, false);
+    else if (act === 'retry') begin(S.level, S.scoreBase, S.endless);
     else if (act === 'menu') showMenu();
   });
   window.addEventListener('keydown', (e) => {
@@ -1422,7 +1443,7 @@ function bind() {
       return;
     }
     if (S.mode !== 'playing') {
-      if (e.key === 'Enter' && S.mode === 'menu') begin(1, 0);
+      if (e.key === 'Enter' && S.mode === 'menu') begin(1, 0, false);
       return;
     }
     const min = -Math.PI + 0.18;

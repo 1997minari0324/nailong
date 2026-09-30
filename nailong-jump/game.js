@@ -6,6 +6,7 @@ const MUTE_KEY = 'nailong-jump-mute';
 const CHARGE_MS = 1280;
 const MIN_JUMP = 70;
 const MAX_JUMP = 214;
+const DEPTH = 0.5; // 深度方向（世界 y 轴）的屏幕压缩比，越大上表面越明显
 const DIRS = [
   { x: 1, y: 0 },
   { x: 0, y: 1 },
@@ -60,7 +61,7 @@ let jump = null;
 let fallT = 0;
 let player = { x: 0, y: 0, lift: 0 };
 let camera = { x: 0, y: 0, scale: 1 };
-const LOOK_AHEAD = 1;
+const LOOK_AHEAD = 2;
 let floaters = [];
 let puffs = [];
 let didJump = false;
@@ -110,7 +111,7 @@ function tone(freq, dur, type, vol) {
 function project(x, y, lift) {
   return {
     x: w / 2 + (x - camera.x),
-    y: h * 0.72 - (y - camera.y) - (lift || 0),
+    y: h * 0.72 - (y - camera.y) * DEPTH - (lift || 0),
   };
 }
 
@@ -227,14 +228,50 @@ function ensureAhead() {
 }
 
 function lookTarget() {
-  const here = platforms[current];
-  const next = platforms[current + 1];
-  if (!here) return { x: player.x, y: player.y };
-  if (!next) return { x: here.x, y: here.y };
+  const end = Math.min(platforms.length - 1, current + LOOK_AHEAD);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = current; i <= end; i++) {
+    const p = platforms[i];
+    if (!p) continue;
+    minX = Math.min(minX, p.x - p.hx);
+    maxX = Math.max(maxX, p.x + p.hx);
+    minY = Math.min(minY, p.y - p.hy);
+    maxY = Math.max(maxY, p.y + p.hy);
+  }
+  if (!isFinite(minX)) return { x: player.x, y: player.y };
   return {
-    x: (here.x + next.x) / 2,
-    y: (here.y + next.y) / 2,
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
   };
+}
+
+// 计算让「当前 + 未来 2 块」完整放进屏幕的缩放系数（通常为 1，只在 3 块拉开时略缩）。
+function viewScale() {
+  const end = Math.min(platforms.length - 1, current + LOOK_AHEAD);
+  if (end < current || w < 10 || h < 10) return 1;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = current; i <= end; i++) {
+    const p = platforms[i];
+    if (!p) continue;
+    const c = project(p.x, p.y, 0);
+    const halfW = Math.max(p.hx, p.shape === 'trap' ? p.hx * 1.28 : p.hx) + 14;
+    const halfDepth = Math.max(8, p.hy * DEPTH);
+    minX = Math.min(minX, c.x - halfW);
+    maxX = Math.max(maxX, c.x + halfW);
+    minY = Math.min(minY, c.y - halfDepth - 54);
+    maxY = Math.max(maxY, c.y + halfDepth + p.h + 22);
+  }
+  if (!isFinite(minX)) return 1;
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  const s = Math.min(1, (w * 0.94) / width, (h * 0.86) / height);
+  return Math.max(0.62, Math.min(1, s));
 }
 
 function startGame() {
@@ -259,7 +296,7 @@ function startGame() {
   const view = lookTarget();
   camera.x = view.x;
   camera.y = view.y;
-  camera.scale = 1;
+  camera.scale = viewScale();
   mode = 'ready';
   overlay.classList.remove('show');
   syncHud();
@@ -370,7 +407,7 @@ function finishJump() {
   const dx = player.x - plat.x;
   const dy = player.y - plat.y;
   player.lift = 0;
-  if (Math.abs(dx) <= plat.hx + 8 && Math.abs(dy) <= plat.hy + 8) {
+  if (Math.abs(dx) <= plat.hx && Math.abs(dy) <= plat.hy) {
     current += 1;
     const perfect = Math.abs(dx) <= Math.max(12, plat.hx * 0.34) && Math.abs(dy) <= Math.max(12, plat.hy * 0.34);
     addScore(perfect);
@@ -409,7 +446,7 @@ function update(dt) {
     const view = lookTarget();
     camera.x += (view.x - camera.x) * Math.min(1, dt * 5);
     camera.y += (view.y - camera.y) * Math.min(1, dt * 5);
-    camera.scale = 1;
+    camera.scale += (viewScale() - camera.scale) * Math.min(1, dt * 4);
   }
 
   floaters.forEach((item) => {
@@ -488,10 +525,11 @@ function paintFace(skin, x, y, width, height) {
 function drawBoxPlatform(c, p, skin) {
   const topW = p.hx;
   const botW = p.shape === 'trap' ? p.hx * 1.28 : p.hx;
-  const lip = Math.max(12, Math.min(18, p.hy * 0.45));
-  const frontTop = c.y + 4;
-  const top = frontTop - lip;
+  const halfDepth = Math.max(8, p.hy * DEPTH);
+  const frontTop = c.y + halfDepth;
+  const top = c.y - halfDepth;
   const bot = frontTop + p.h;
+  const lip = halfDepth * 2;
   ctx.beginPath();
   ctx.ellipse(c.x, bot + 8, botW * 0.85, 9, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(40, 80, 20, 0.14)';
@@ -500,7 +538,7 @@ function drawBoxPlatform(c, p, skin) {
   ctx.beginPath();
   ctx.moveTo(c.x + topW, frontTop);
   ctx.lineTo(c.x + topW + 12, top);
-  ctx.lineTo(c.x + botW + 12, bot - lip);
+  ctx.lineTo(c.x + botW + 12, top + p.h);
   ctx.lineTo(c.x + botW, bot);
   ctx.closePath();
   ctx.fill();
@@ -527,7 +565,7 @@ function drawBoxPlatform(c, p, skin) {
 
 function drawCylinderPlatform(c, p, skin) {
   const rx = p.hx;
-  const ry = Math.max(9, Math.min(15, p.hy * 0.7));
+  const ry = Math.max(7, Math.min(30, p.hy * DEPTH));
   const top = c.y;
   const bot = c.y + p.h;
   ctx.beginPath();
@@ -681,12 +719,19 @@ function render() {
   if (mode !== 'pick') {
     const order = platforms.map((p, index) => ({ p, index }));
     order.sort((a, b) => b.p.y - a.p.y);
+    ctx.save();
+    const anchorX = w / 2;
+    const anchorY = h * 0.72;
+    ctx.translate(anchorX, anchorY);
+    ctx.scale(camera.scale, camera.scale);
+    ctx.translate(-anchorX, -anchorY);
     drawRoute();
     order.forEach((item) => {
       if (item.index >= current && item.index <= current + LOOK_AHEAD) drawPlatform(item.p);
     });
     if (mode !== 'over') drawJumper();
     drawFloaters();
+    ctx.restore();
     drawHint();
   }
 }

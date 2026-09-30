@@ -5,6 +5,8 @@ const MUTE_KEY = 'nailong-skyscraper-mute';
 const FLOOR_H = 62;
 const CELL = 62;
 const MODULE_GAP = 4;
+const BASE_SWAY = 0.013; // 平衡时的轻微左右摇晃（弧度）
+const MAX_SWAY = 0.05; // 越歪晃得越厉害，但上限保持「只是摇晃」不倒
 
 const SKINS = [
   { id: 'happy', file: 'assets/happy.jpg' },
@@ -68,7 +70,8 @@ let time = 0;
 let swingClock = 0;
 let cam = 0;
 let lean = 0;
-let leanVel = 0;
+let swayAmp = 0;
+let swayPhase = 0;
 let shake = 0;
 let overDelay = 0;
 let overShown = false;
@@ -268,7 +271,7 @@ function showMenu() {
   phase = 'swing';
   card.innerHTML = '<h1>奶龙摩天楼</h1>'
     + '<p class="lead">方块里装着奶龙。它会左右摆，点一下放下来，叠到下面那块的正上方。</p>'
-    + '<p class="note">放下的是一块或两块正方块。没对准会留在落下的位置。偏出下面的底座，楼会倒。</p>'
+    + '<p class="note">楼会随着越盖越歪而左右摇晃，越歪晃得越厉害；但楼不会真的倒下。只有整块完全没搭上、掉下去才算失败。</p>'
     + '<button class="primary" type="button" data-act="start">开始盖楼</button>'
     + '<p class="note">最高入住 ' + best.people + ' 人 · 最高 ' + best.floors + ' 层</p>'
     + '<a class="ghost" href="../">返回</a>';
@@ -279,7 +282,7 @@ function showMenu() {
 function showOver() {
   overShown = true;
   const record = newPeople ? '<p class="record">新的入住纪录！</p>' : (newHeight ? '<p class="record">盖得更高了！</p>' : '');
-  card.innerHTML = '<h1>楼盖倒啦</h1>'
+  card.innerHTML = '<h1>整块没搭上，掉下去啦</h1>'
     + '<p class="score-lg">' + residents + ' 人</p>'
     + record
     + '<p class="note">盖了 ' + builtFloors() + ' 层</p>'
@@ -299,7 +302,8 @@ function resetTower() {
   newHeight = false;
   cam = 0;
   lean = 0;
-  leanVel = 0;
+  swayAmp = 0;
+  swayPhase = 0;
   shake = 0;
   overDelay = 0;
   overShown = false;
@@ -438,50 +442,40 @@ function localXFromScreen(screenX, localY) {
   return pivot.x + (screenX - pivot.x + dy * s) / c;
 }
 
-function collapseDirection() {
+function towerCrookedness() {
   const base = floors[0];
-  let mass = 0;
-  let mx = 0;
+  if (!base || floors.length < 2) return 0;
+  let weightedOffset = 0;
+  let weight = 0;
+  let jointRisk = 0;
   for (let i = 1; i < floors.length; i++) {
     const below = floors[i - 1];
     const floor = floors[i];
-    if (Math.abs(floor.center - below.center) > below.width / 2) {
-      return Math.sign(floor.center - below.center) || 1;
-    }
-    mass += floor.width;
-    mx += floor.center * floor.width;
+    const mass = Math.max(24, floor.width);
+    const shift = Math.abs(floor.center - below.center);
+    jointRisk = Math.max(jointRisk, shift / Math.max(24, below.width * 0.5));
+    weightedOffset += (floor.center - base.center) * mass;
+    weight += mass;
   }
-  if (!mass) return 0;
-  const com = mx / mass;
-  if (Math.abs(com - base.center) > base.width / 2) {
-    return Math.sign(com - base.center) || 1;
-  }
-  return 0;
+  const centerRisk = weight
+    ? Math.abs(weightedOffset / weight) / Math.max(24, base.width * 0.5)
+    : 0;
+  return Math.min(1, Math.max(jointRisk, centerRisk));
 }
 
 function updateSway(dt) {
-  if (mode !== 'over') {
+  const crooked = mode === 'play' ? towerCrookedness() : 0;
+  const target = mode === 'play'
+    ? BASE_SWAY + crooked * (MAX_SWAY - BASE_SWAY)
+    : 0;
+  swayAmp += (target - swayAmp) * Math.min(1, dt * 4);
+  const heightFactor = Math.max(1, Math.sqrt(floors.length));
+  swayPhase += dt * (3.2 / heightFactor + 0.75);
+  lean = Math.sin(swayPhase) * swayAmp;
+  if (swayAmp < 0.001) {
+    swayAmp = 0;
     lean = 0;
-    leanVel = 0;
-    return;
   }
-  leanVel += Math.sign(leanVel || lean || 1) * 3.2 * dt;
-  lean += leanVel * dt;
-}
-
-function topple() {
-  if (mode !== 'play') return;
-  mode = 'over';
-  overDelay = 0.75;
-  overShown = false;
-  shake = 14;
-  combo = 0;
-  comboTime = 0;
-  saveBest();
-  tone(220, 0.18, 'sawtooth', 0.04);
-  tone(120, 0.32, 'sine', 0.05);
-  buzz(40);
-  syncHud();
 }
 
 function landPiece() {
@@ -494,8 +488,7 @@ function landPiece() {
   const left = Math.max(a1, b1);
   const right = Math.min(a2, b2);
   const overlap = right - left;
-  const minKeep = Math.max(18, piece.width * 0.1);
-  if (overlap < minKeep) {
+  if (overlap <= 1) {
     failPiece();
     return;
   }
@@ -513,13 +506,8 @@ function landPiece() {
     flash: perfect ? 0.55 : 0.18,
   });
   shake = 0;
-  const fallDir = collapseDirection();
-  if (fallDir) {
-    leanVel = fallDir * 0.65;
-    piece = null;
-    topple();
-    return;
-  }
+  const landingOffset = Math.abs(localCenter - top.center) / Math.max(24, top.width);
+  swayAmp = Math.max(swayAmp, Math.min(MAX_SWAY, BASE_SWAY + landingOffset * 0.2));
   pickHangPiece();
   const roofY = (roof.left.y + roof.right.y) / 2;
   spawnDust(dropCenter, roofY, piece.width);
